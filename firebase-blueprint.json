@@ -1,0 +1,160 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "bio": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "member"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "role", "createdAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Notice or Review post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["notice", "review"] },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "number" },
+        "likes": { "type": "number" },
+        "views": { "type": "number" },
+        "isPinned": { "type": "boolean" }
+      },
+      "required": ["id", "type", "title", "content", "authorId", "authorName", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Comment on a post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "postId", "authorId", "authorName", "content", "createdAt"]
+    },
+    "Schedule": {
+      "title": "Schedule",
+      "description": "Band schedule/event",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "location": { "type": "string" },
+        "mapQuery": { "type": "string" },
+        "description": { "type": "string" },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "title", "date", "location", "authorId", "createdAt"]
+    },
+    "Score": {
+      "title": "Score",
+      "description": "Music score sheet",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "fileType": { "type": "string", "enum": ["pdf", "jpg", "png"] },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "title", "fileType", "authorId", "createdAt"]
+    },
+    "ScoreNote": {
+      "title": "ScoreNote",
+      "description": "Personal note on a score",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "scoreId": { "type": "string" },
+        "content": { "type": "string" },
+        "authorId": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "scoreId", "content", "authorId", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Direct message between users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "senderId", "senderName", "receiverId", "receiverName", "content", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "App notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["notice", "admin", "message"] },
+        "createdAt": { "type": "number" },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "userId", "title", "content", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "posts/{postId}": {
+      "schema": "Post",
+      "description": "Board posts"
+    },
+    "posts/{postId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on posts"
+    },
+    "schedules/{scheduleId}": {
+      "schema": "Schedule",
+      "description": "Band schedules"
+    },
+    "scores/{scoreId}": {
+      "schema": "Score",
+      "description": "Shared musical scores"
+    },
+    "scores/{scoreId}/notes/{noteId}": {
+      "schema": "ScoreNote",
+      "description": "Private notes on scores"
+    },
+    "messages/{messageId}": {
+      "schema": "Message",
+      "description": "Direct messages"
+    },
+    "notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    }
+  }
+}

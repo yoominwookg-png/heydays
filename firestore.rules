@@ -1,0 +1,244 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'password');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 1. Users
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.id is string && data.id.size() <= 128 &&
+               data.name is string && data.name.size() <= 100 &&
+               data.name.size() > 0 &&
+               data.role in ['admin', 'member'] &&
+               data.createdAt is number &&
+               (!('avatar' in data) || data.avatar is string) &&
+               (!('bio' in data) || data.bio is string) &&
+               (!('deletedAt' in data) || data.deletedAt is number);
+      }
+
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn(); // Band members can see the directory
+      allow create: if isVerified() && isOwner(userId) && 
+                      isValidUser(incoming()) && 
+                      isValidId(userId);
+      allow update: if isVerified() && isValidId(userId) && (
+                      (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'bio', 'deletedAt']) && isValidUser(incoming())) ||
+                      (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'deletedAt']) && isValidUser(incoming()))
+                    );
+      allow delete: if isVerified() && isValidId(userId) && isAdmin();
+    }
+    
+    // Explicit Admin markers to avoid recursive loops in isAdmin() helper if needed
+    // But usually get() is fine. Let's use a separate collection for admin UIDs for efficiency.
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Managed via console
+    }
+
+    // 2. Posts
+    match /posts/{postId} {
+      function isValidPost(data) {
+        return data.id is string && data.type in ['notice', 'review'] &&
+               data.title is string && data.title.size() <= 200 &&
+               data.content is string && data.content.size() <= 20000 &&
+               data.authorId is string &&
+               data.authorName is string &&
+               data.createdAt is number &&
+               data.likes is number &&
+               data.views is number &&
+               (!('files' in data) || (data.files is list && data.files.size() <= 10)) &&
+               (!('fileData' in data) || data.fileData is string) &&
+               (!('commentCount' in data) || data.commentCount is number) &&
+               (!('isPinned' in data) || data.isPinned is bool);
+      }
+
+      allow read: if isSignedIn() && isValidId(postId);
+      allow list: if isSignedIn(); 
+      allow create: if isVerified() && isValidId(postId) && isValidPost(incoming()) && 
+                      incoming().authorId == request.auth.uid &&
+                      (incoming().type == 'notice' ? isAdmin() : true);
+      allow update: if isVerified() && isValidId(postId) && (
+                      (isOwner(existing().authorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'files', 'fileData', 'commentCount', 'isPinned', 'authorName']) && isValidPost(incoming())) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && incoming().likes == existing().get('likes', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number) ||
+                      isAdmin()
+                    );
+      allow delete: if isSignedIn() && isValidId(postId) && (isOwner(existing().authorId) || isAdmin());
+    }
+
+    // 3. Comments
+    match /posts/{postId}/comments/{commentId} {
+      function isValidComment(data) {
+        return data.id is string && data.postId == postId &&
+               data.authorId is string &&
+               data.authorName is string &&
+               data.content is string && data.content.size() <= 2000 &&
+               data.createdAt is number;
+      }
+
+      allow read: if isSignedIn() && isValidId(postId) && isValidId(commentId);
+      allow list: if isSignedIn() && isValidId(postId);
+      allow create: if isVerified() && incoming().authorId == request.auth.uid;
+      allow delete: if isVerified() && isValidId(postId) && isValidId(commentId) && 
+                      (isOwner(existing().authorId) || isAdmin());
+    }
+
+    // 4. Schedules
+    match /schedules/{scheduleId} {
+      function isValidSchedule(data) {
+        return data.id is string && data.title is string && data.title.size() <= 200 &&
+               data.date is string && data.location is string &&
+               data.description is string &&
+               data.authorId is string &&
+               data.createdAt is number &&
+               (!('files' in data) || (data.files is list && data.files.size() <= 10)) &&
+               (!('mapQuery' in data) || data.mapQuery is string) &&
+               (!('likes' in data) || data.likes is number) &&
+               (!('views' in data) || data.views is number) &&
+               (!('commentCount' in data) || data.commentCount is number);
+      }
+
+      allow read: if isSignedIn() && isValidId(scheduleId);
+      allow list: if isSignedIn();
+      allow create: if isVerified() && isAdmin() && isValidId(scheduleId) && 
+                      isValidSchedule(incoming()) && incoming().authorId == request.auth.uid;
+      allow update: if isVerified() && isValidId(scheduleId) && (
+                      (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'date', 'location', 'description', 'files', 'mapQuery']) && isValidSchedule(incoming())) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && incoming().likes == existing().get('likes', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number)
+                    );
+      allow delete: if isVerified() && isAdmin() && isValidId(scheduleId);
+    }
+
+    match /schedules/{scheduleId}/comments/{commentId} {
+      function isValidComment(data) {
+        return data.id is string &&
+               data.authorId is string &&
+               data.authorName is string &&
+               data.content is string && data.content.size() <= 2000 &&
+               data.createdAt is number;
+      }
+      allow read, list: if isSignedIn() && isValidId(scheduleId);
+      allow create: if isVerified() && incoming().authorId == request.auth.uid;
+      allow delete: if isVerified() && (isOwner(existing().authorId) || isAdmin());
+    }
+
+    // 5. Scores
+    match /scores/{scoreId} {
+      function isValidScore(data) {
+        return data.id is string && data.title is string && data.title.size() <= 200 &&
+               data.fileType in ['pdf', 'jpg', 'png'] &&
+               data.authorId is string &&
+               data.createdAt is number &&
+               (!('description' in data) || data.description is string) &&
+               (!('fileData' in data) || data.fileData is string) &&
+               (!('files' in data) || (data.files is list && data.files.size() <= 10)) &&
+               (!('likes' in data) || data.likes is number) &&
+               (!('views' in data) || data.views is number) &&
+               (!('commentCount' in data) || data.commentCount is number);
+      }
+
+      allow read: if isSignedIn() && isValidId(scoreId);
+      allow list: if isSignedIn();
+      allow create: if isVerified() && isValidScore(incoming()) && 
+                      incoming().authorId == request.auth.uid && 
+                      isValidId(scoreId);
+      allow update: if isVerified() && isValidId(scoreId) && (
+                      (isOwner(existing().authorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'fileData', 'files']) && isValidScore(incoming())) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && incoming().likes == existing().get('likes', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number) ||
+                      isAdmin()
+                    );
+      allow delete: if isVerified() && (isOwner(existing().authorId) || isAdmin()) && isValidId(scoreId);
+    }
+
+    match /scores/{scoreId}/comments/{commentId} {
+      function isValidComment(data) {
+        return data.id is string &&
+               data.authorId is string &&
+               data.authorName is string &&
+               data.content is string && data.content.size() <= 2000 &&
+               data.createdAt is number;
+      }
+      allow read, list: if isSignedIn() && isValidId(scoreId);
+      allow create: if isVerified() && incoming().authorId == request.auth.uid;
+      allow delete: if isVerified() && (isOwner(existing().authorId) || isAdmin());
+    }
+
+    // 6. Score Notes
+    match /scores/{scoreId}/notes/{noteId} {
+      function isValidNote(data) {
+        return data.id is string && data.scoreId == scoreId &&
+               data.authorId == request.auth.uid &&
+               data.content is string && data.content.size() <= 2000 &&
+               data.updatedAt is number;
+      }
+
+      allow read: if isSignedIn() && isOwner(noteId); // noteId is userId
+      allow write: if isVerified() && isOwner(noteId) && isValidNote(incoming());
+    }
+
+    // 7. Messages
+    match /messages/{messageId} {
+      function isValidMessage(data) {
+        return data.senderId == request.auth.uid &&
+               data.content is string && data.content.size() <= 5000 &&
+               data.createdAt is number;
+      }
+
+      allow create: if isVerified() && isValidId(messageId) && isValidMessage(incoming());
+      allow update: if isVerified() && isValidId(messageId) && isOwner(existing().receiverId) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isVerified() && isValidId(messageId) && (isOwner(existing().senderId) || isOwner(existing().receiverId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+    }
+
+    // 8. Notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && isValidId(notificationId) && (existing().userId == request.auth.uid || existing().userId == 'all');
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.userId == 'all');
+      allow update: if isVerified() && isValidId(notificationId) && (isOwner(existing().userId) || existing().userId == 'all' || isAdmin()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow create: if isVerified() && isValidId(notificationId) && (
+                      (incoming().userId == 'all' && isAdmin()) ||
+                      (incoming().userId != 'all' && incoming().userId is string)
+                    );
+      allow delete: if isVerified() && (isAdmin() || isOwner(existing().userId)) && isValidId(notificationId);
+    }
+  }
+}
