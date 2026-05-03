@@ -12,7 +12,8 @@ import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  browserPopupRedirectResolver
+  browserPopupRedirectResolver,
+  signInWithCustomToken
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -22,6 +23,7 @@ import { StorageService } from './storage';
 interface AuthContextType {
   user: User | null;
   loginWithGoogle: () => Promise<void>;
+  loginWithKakao: () => Promise<void>;
   loginWithId: (id: string, pass: string) => Promise<void>;
   signupWithId: (id: string, pass: string, name: string, bio: string, avatar?: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -128,6 +130,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithKakao = async () => {
+    return new Promise<void>(async (resolve, reject) => {
+      try {
+        // 1. Fetch Kakao Auth URL
+        const response = await fetch('/api/auth/kakao/url');
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Failed to get Kakao auth URL');
+        }
+        const { url } = await response.json();
+
+        // 2. Open Popup
+        const authWindow = window.open(
+          url,
+          'kakao_oauth_popup',
+          'width=500,height=600'
+        );
+
+        if (!authWindow) {
+          throw new Error('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.');
+        }
+
+        // 3. Listen for postMessage
+        const handleMessage = async (event: MessageEvent) => {
+          // 보안: 오리진 체크 (AI Studio 환경 대응)
+          if (!event.origin.endsWith('.run.app') && !event.origin.includes('localhost')) {
+            return;
+          }
+
+          if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.provider === 'kakao') {
+            window.removeEventListener('message', handleMessage);
+            const { token } = event.data;
+
+            try {
+              // 4. Sign in with Custom Token
+              await signInWithCustomToken(auth, token);
+              localStorage.setItem('heydays_login_timestamp', Date.now().toString());
+              resolve();
+            } catch (error) {
+              console.error('Firebase custom token login failed:', error);
+              reject(error);
+            }
+          }
+        };
+
+        window.addEventListener('message', handleMessage);
+      } catch (error: any) {
+        console.error('Kakao login failed:', error);
+        alert(error.message || '카카오 로그인 중 오류가 발생했습니다.');
+        reject(error);
+      }
+    });
+  };
+
   const loginWithId = async (id: string, pass: string) => {
     const email = id.includes('@') ? id.toLowerCase() : `${id.toLowerCase()}@heydays.com`;
     // 파이어베이스는 최소 6자리를 요구하므로, 6자리 미만인 경우 내부적으로 패딩 처리
@@ -204,7 +260,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loginWithGoogle, loginWithId, signupWithId, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, loginWithGoogle, loginWithKakao, loginWithId, signupWithId, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

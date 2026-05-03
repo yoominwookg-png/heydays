@@ -32,7 +32,6 @@ import { StorageService } from '../services/storage';
 import { Score, ScoreNote, UserRole, Comment, User } from '../types';
 import { useAuth } from '../services/auth';
 import { cn, formatDate } from '../lib/utils';
-import { compressImage } from '../lib/imageCompression';
 
 import FileUploadZone from '../components/FileUploadZone';
 import UserBioModal from '../components/UserBioModal';

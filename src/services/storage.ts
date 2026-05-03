@@ -437,26 +437,41 @@ export const StorageService = {
   // Firebase Storage
   async uploadFile(path: string, file: File | Blob): Promise<string> {
     const { uploadBytesResumable, getDownloadURL } = await import('firebase/storage');
+    const { compressImage } = await import('../lib/imageCompression');
+    
+    // Auto-compress if it's an image File
+    let uploadFile = file;
+    if (file instanceof File && file.type.startsWith('image/')) {
+      try {
+        uploadFile = await compressImage(file);
+      } catch (err) {
+        console.warn('Compression skipped, using original file:', err);
+      }
+    }
     
     return new Promise((resolve, reject) => {
       try {
         const storageRef = ref(storage, path);
-        const uploadTask = uploadBytesResumable(storageRef, file);
+        const uploadTask = uploadBytesResumable(storageRef, uploadFile);
 
-        // Add a timeout of 60 seconds
+        // Increased timeout to 300 seconds (5 minutes) for larger files or slower connections
         const timeout = setTimeout(() => {
           uploadTask.cancel();
-          reject(new Error('Upload timed out after 60 seconds.'));
-        }, 60000);
+          reject(new Error('Upload timed out after 300 seconds. Please check your network connection.'));
+        }, 300000);
 
         uploadTask.on('state_changed', 
           (snapshot) => {
             const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            console.log(`Upload is ${progress}% done`);
+            console.log(`Upload is ${progress.toFixed(1)}% done`);
           }, 
           (error) => {
             clearTimeout(timeout);
-            console.error('Error uploading file:', error);
+            if (error.code === 'storage/canceled') {
+              console.log('Upload was canceled (likely due to timeout)');
+            } else {
+              console.error('Error uploading file:', error);
+            }
             reject(error);
           }, 
           async () => {

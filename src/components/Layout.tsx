@@ -340,35 +340,37 @@ export default function Layout() {
             </button>
           </div>
 
-          {/* User Profile - Moved to top as per user request */}
-          <div className="p-4 border-b border-slate-100 dark:border-slate-800">
-            <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 overflow-hidden flex items-center justify-center flex-shrink-0">
-                  {user?.avatar ? (
-                    <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+          {/* User Profile - Compact horizontal layout */}
+          <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 overflow-hidden flex items-center justify-center flex-shrink-0">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                ) : (
+                  user?.role === UserRole.ADMIN ? (
+                    <Crown className="text-indigo-600 dark:text-indigo-400 fill-indigo-600/10" size={18} />
                   ) : (
-                    user?.role === UserRole.ADMIN ? (
-                      <Crown className="text-indigo-600 dark:text-indigo-400 fill-indigo-600/10" size={20} />
-                    ) : (
-                      <UserIcon className="text-indigo-600 dark:text-indigo-400" size={20} />
-                    )
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-sm truncate dark:text-white flex items-center gap-1">
-                    {user?.name}
-                    {user?.role === UserRole.ADMIN && <Crown size={12} className="text-indigo-600 dark:text-indigo-400 fill-indigo-600/20" />}
-                  </p>
-                  <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">{user?.role === UserRole.ADMIN ? '관리자' : '밴드 멤버'}</p>
-                </div>
+                    <UserIcon className="text-indigo-600 dark:text-indigo-400" size={18} />
+                  )
+                )}
               </div>
+              
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm truncate dark:text-white flex items-center gap-1">
+                  {user?.name}
+                  {user?.role === UserRole.ADMIN && <Crown size={12} className="text-indigo-600 dark:text-indigo-400 fill-indigo-600/20" />}
+                </p>
+                <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  HEYDAYS MEMBER
+                </p>
+              </div>
+
               <button 
                 onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all font-bold text-[10px]"
+                title="로그아웃"
+                className="p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all flex items-center justify-center"
               >
-                <LogOut size={12} />
-                로그아웃
+                <LogOut size={16} />
               </button>
             </div>
           </div>

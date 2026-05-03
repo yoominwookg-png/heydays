@@ -27,7 +27,6 @@ import { StorageService } from '../services/storage';
 import { Post, PostType, UserRole, Comment, User } from '../types';
 import { useAuth } from '../services/auth';
 import { formatDate, cn } from '../lib/utils';
-import { compressImage } from '../lib/imageCompression';
 
 import FileUploadZone from './FileUploadZone';
 import UserBioModal from './UserBioModal';

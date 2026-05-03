@@ -28,7 +28,6 @@ import { StorageService } from '../services/storage';
 import { useAuth } from '../services/auth';
 import { Schedule, UserRole, Comment, User } from '../types';
 import { cn } from '../lib/utils';
-import { compressImage } from '../lib/imageCompression';
 import { motion, AnimatePresence } from 'motion/react';
 
 import FileUploadZone from '../components/FileUploadZone';
