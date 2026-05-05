@@ -8,24 +8,19 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('heydays_theme');
-    if (saved) return saved === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  // Force dark mode always
+  const isDarkMode = true;
 
   useEffect(() => {
     const root = window.document.documentElement;
-    if (isDarkMode) {
-      root.classList.add('dark');
-      localStorage.setItem('heydays_theme', 'dark');
-    } else {
-      root.classList.remove('dark');
-      localStorage.setItem('heydays_theme', 'light');
-    }
-  }, [isDarkMode]);
+    root.classList.add('dark');
+    localStorage.setItem('heydays_theme', 'dark');
+  }, []);
 
-  const toggleDarkMode = () => setIsDarkMode(prev => !prev);
+  const toggleDarkMode = () => {
+    // Disable toggling
+    console.log('Dark mode is forced for this application.');
+  };
 
   return (
     <ThemeContext.Provider value={{ isDarkMode, toggleDarkMode }}>

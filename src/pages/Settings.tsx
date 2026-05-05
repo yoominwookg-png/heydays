@@ -35,7 +35,6 @@ import { AdminCrown } from '../components/AdminCrown';
 
 export default function Settings() {
   const { user } = useAuth();
-  const { isDarkMode, toggleDarkMode } = useTheme();
   const { refreshUsers } = useUsersContext();
   const [users, setUsers] = useState<User[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -313,40 +312,8 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Display Settings */}
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800">
-            <h3 className="text-xl font-black mb-6 flex items-center gap-3">
-              <Sun className="text-amber-500" size={24} /> 화면 설정
-            </h3>
-            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700">
-              <div className="flex items-center gap-3">
-                <div className={cn(
-                  "p-2 rounded-xl transition-colors",
-                  isDarkMode ? "bg-indigo-900/30 text-indigo-400" : "bg-amber-100 text-amber-600"
-                )}>
-                  {isDarkMode ? <Moon size={20} /> : <Sun size={20} />}
-                </div>
-                <div>
-                  <p className="font-bold text-slate-900 dark:text-white">다크 모드</p>
-                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">화면 테마를 변경합니다</p>
-                </div>
-              </div>
-              <button 
-                onClick={toggleDarkMode}
-                className={cn(
-                  "w-12 h-6 rounded-full transition-all duration-300 relative focus:outline-none",
-                  isDarkMode ? "bg-indigo-600" : "bg-slate-200"
-                )}
-              >
-                <div className={cn(
-                  "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300 shadow-sm",
-                  isDarkMode ? "left-7" : "left-1"
-                )} />
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* Display Settings - Removed as dark mode is forced */}
+
       </div>
 
       <UserBioModal user={viewingBioUser} onClose={() => setViewingBioUser(null)} />

@@ -27,8 +27,6 @@ import {
   Timer,
   Shield,
   MessageSquare,
-  Sun,
-  Moon,
   Trash2
 } from 'lucide-react';
 import { useAuth } from '../services/auth';
@@ -75,13 +73,6 @@ export default function Layout() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifToDelete, setNotifToDelete] = useState<AppNotification | null>(null);
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return document.documentElement.classList.contains('dark') || 
-             localStorage.getItem('theme') === 'dark';
-    }
-    return false;
-  });
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -94,16 +85,6 @@ export default function Layout() {
       fetchNotifs();
     }
   }, [user]);
-
-  useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [isDark]);
 
   const handleLogout = () => {
     logout();
