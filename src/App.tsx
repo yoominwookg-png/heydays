@@ -17,9 +17,12 @@ import AdminDataCenter from './pages/AdminDataCenter';
 import AdminCenter from './pages/AdminCenter';
 import Schedules from './pages/Schedules';
 import Settings from './pages/Settings';
+import Messages from './pages/Messages';
+import Members from './pages/Members';
 import { PostType } from './types';
 
 import { UsersProvider } from './contexts/UsersContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 
 // Placeholder components for other pages
 const Placeholder = ({ name }: { name: string }) => (
@@ -43,33 +46,37 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <UsersProvider>
-        <HashRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            
-            <Route path="/" element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }>
-              <Route index element={<Navigate to="/notices" replace />} />
-              <Route path="notices" element={<Board type={PostType.NOTICE} title="헤이데이즈 소식" />} />
-              <Route path="schedules" element={<Schedules />} />
-              <Route path="reviews" element={<Board type={PostType.REVIEW} title="공연후기 글" />} />
-              <Route path="scores" element={<ScoreLibrary />} />
-              <Route path="metronome" element={<Metronome />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="admin" element={<AdminCenter />} />
-              <Route path="admin/data" element={<AdminDataCenter />} />
-            </Route>
-
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </HashRouter>
-      </UsersProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <UsersProvider>
+          <HashRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              
+              <Route path="/" element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }>
+                <Route index element={<Navigate to="/notices" replace />} />
+                <Route path="notices" element={<Board type={PostType.NOTICE} title="헤이데이즈 소식" />} />
+                <Route path="schedules" element={<Schedules />} />
+                <Route path="reviews" element={<Board type={PostType.REVIEW} title="공연후기 글" />} />
+                <Route path="scores" element={<ScoreLibrary />} />
+                <Route path="metronome" element={<Metronome />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="messages" element={<Messages />} />
+                <Route path="members" element={<Members />} />
+                <Route path="admin" element={<AdminCenter />} />
+                <Route path="admin/data" element={<AdminDataCenter />} />
+              </Route>
+  
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </HashRouter>
+        </UsersProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

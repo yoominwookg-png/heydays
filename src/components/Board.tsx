@@ -13,6 +13,7 @@ import {
   MessageSquare, 
   Pin, 
   X,
+  Clock,
   Edit,
   Trash2,
   PenLine,
@@ -31,6 +32,10 @@ import { formatDate, cn } from '../lib/utils';
 import FileUploadZone from './FileUploadZone';
 import UserBioModal from './UserBioModal';
 import { UserAvatarDisplay } from './UserAvatarDisplay';
+import { FirestoreImage } from './FirestoreImage';
+import { FirestoreFileLink } from './FirestoreFileLink';
+import ImageGallery from './ImageGallery';
+import { AdminCrown } from './AdminCrown';
 
 interface BoardProps {
   type: PostType;
@@ -46,6 +51,7 @@ export default function Board({ type, title }: BoardProps) {
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
   const [commentToDelete, setCommentToDelete] = useState<{comment: Comment, postId: string} | null>(null);
   const [commentRefreshTrigger, setCommentRefreshTrigger] = useState(0);
+  const [galleryState, setGalleryState] = useState<{ images: string[], index: number } | null>(null);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -202,14 +208,10 @@ export default function Board({ type, title }: BoardProps) {
           {comments.map((comment) => (
             <div key={comment.id} className="flex justify-between items-start group/comment bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-2xl">
               <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/20 flex items-center justify-center flex-shrink-0">
-                      {comment.authorId === 'admin' || comment.authorName === '관리자' ? (
-                        <Crown size={12} className="text-indigo-600 dark:text-indigo-400 fill-indigo-600/20" />
-                      ) : (
-                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 w-full h-full flex items-center justify-center">
-                          <UserAvatarDisplay userId={comment.authorId} name={comment.authorName} />
-                        </span>
-                      )}
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 w-full h-full flex items-center justify-center">
+                        <UserAvatarDisplay userId={comment.authorId} name={comment.authorName} />
+                      </span>
                     </div>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -218,7 +220,7 @@ export default function Board({ type, title }: BoardProps) {
                           className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
                         >
                           {comment.authorName}
-                          {(comment.authorId === 'admin' || comment.authorName === '관리자') && <Crown size={10} className="fill-indigo-600/20" />}
+                          {(comment.authorId === 'admin' || comment.authorName === '관리자') && <AdminCrown size={10} />}
                         </button>
                         <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{formatDate(comment.createdAt)}</span>
                       </div>
@@ -239,18 +241,13 @@ export default function Board({ type, title }: BoardProps) {
         </div>
 
         <form onSubmit={handleAddComment} className="space-y-3">
-          <div className="flex gap-3">
-            <input 
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
-              placeholder="댓글을 입력하세요..."
-              required
-            />
-            <button className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center">
-              <Send size={18} />
-            </button>
-          </div>
+          <input 
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
+            placeholder="댓글을 입력하세요..."
+            required
+          />
         </form>
       </div>
     );
@@ -265,6 +262,7 @@ export default function Board({ type, title }: BoardProps) {
       editingPost?.fileData ? [{ url: editingPost.fileData }] : []
     );
     const [isUploading, setIsUploading] = useState(false);
+    const [loadingMessage, setLoadingMessage] = useState('');
 
     const removeFile = (index: number) => {
       const item = fileItems[index];
@@ -285,6 +283,7 @@ export default function Board({ type, title }: BoardProps) {
       }
 
       setIsUploading(true);
+      setLoadingMessage('이미지 압축 및 분석 중...');
       
       try {
         const postId = editingPost?.id || Math.random().toString(36).substring(2, 11);
@@ -295,10 +294,13 @@ export default function Board({ type, title }: BoardProps) {
         
         let uploadedUrls: string[] = [];
         if (newFiles.length > 0) {
-          console.log(`Starting upload of ${newFiles.length} files...`);
+          setLoadingMessage(`파일 업로드 중 (0/${newFiles.length})...`);
+          // We wrap the upload in a way that we could potentially track progress if storage service supported it
+          // For now, increasing the timeout in storage service helps avoid the hang
           uploadedUrls = await StorageService.uploadFiles('posts', postId, newFiles);
-          console.log(`Successfully uploaded ${uploadedUrls.length} files.`);
         }
+        
+        setLoadingMessage('게시글 저장 중...');
         
         const finalUrls = [...existingUrls, ...uploadedUrls];
         const firstFileData = finalUrls.length > 0 ? finalUrls[0] : '';
@@ -436,7 +438,7 @@ export default function Board({ type, title }: BoardProps) {
               disabled={isUploading}
               className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all disabled:bg-slate-400"
             >
-              {isUploading ? '업로드 중...' : (editingPost ? '변경사항 저장' : '작성 완료')}
+              {isUploading ? (loadingMessage || '업로드 중...') : (editingPost ? '변경사항 저장' : '작성 완료')}
             </button>
           </form>
         </motion.div>
@@ -445,11 +447,15 @@ export default function Board({ type, title }: BoardProps) {
   };
 
   const isImageFile = (url: string) => {
-    return url.match(/\.(jpeg|jpg|gif|png|webp|bmp|svg)(?:\?|%3F|$)/i) !== null;
+    return url.match(/\.(jpeg|jpg|gif|png|webp)(?:_|\?|%3F|$)/i) !== null;
   };
 
   const getFileName = (url: string) => {
     try {
+      if (url.startsWith('firestore://')) {
+        const id = url.split('/').pop() || '';
+        return id.split('_').slice(2, -1).join('_') || '파일명 없음';
+      }
       const urlObj = new URL(url);
       const parts = urlObj.pathname.split('/');
       const lastPart = parts[parts.length - 1];
@@ -461,14 +467,12 @@ export default function Board({ type, title }: BoardProps) {
 
   const renderFileAttachment = (fileUrl: string, idx: number) => {
     if (isImageFile(fileUrl)) {
-      return <img src={fileUrl} className="w-full object-contain max-h-[500px] rounded-2xl" alt={`Attachment ${idx}`} />;
+      return <FirestoreImage src={fileUrl} className="w-full object-contain max-h-[500px] rounded-2xl" alt={`Attachment ${idx}`} />;
     }
     return (
-      <a 
-        href={fileUrl} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
+      <FirestoreFileLink 
+        url={fileUrl} 
+        filename={getFileName(fileUrl)}
         className="flex items-center gap-3 p-4 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-2xl transition-colors group"
       >
         <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">
@@ -480,31 +484,57 @@ export default function Board({ type, title }: BoardProps) {
             <Download size={12} /> 다운로드
           </p>
         </div>
-      </a>
+      </FirestoreFileLink>
     );
   };
 
-  const renderLargeFileAttachment = (fileUrl: string, idx: number) => {
+  const renderLargeFileAttachment = (fileUrl: string, idx: number, allFiles: string[]) => {
     if (isImageFile(fileUrl)) {
-      return <img src={fileUrl} alt={`Attachment ${idx + 1}`} className="w-full h-auto object-contain max-h-[800px] rounded-[2rem]" />;
+      const imageFiles = allFiles.filter(f => isImageFile(f));
+      const imageIndex = imageFiles.indexOf(fileUrl);
+      
+      return (
+        <div key={idx} className="flex flex-col items-start gap-4 py-2 w-full">
+          <div 
+            className="cursor-zoom-in w-full max-w-sm overflow-hidden rounded-2xl shadow-md hover:shadow-lg transition-all border border-slate-200 dark:border-slate-700"
+            onClick={() => setGalleryState({ images: imageFiles, index: imageIndex >= 0 ? imageIndex : 0 })}
+          >
+            <FirestoreImage 
+              src={fileUrl} 
+              alt={`Attachment ${idx + 1}`} 
+              className="w-full h-auto object-cover aspect-video hover:scale-105 transition-transform duration-500" 
+            />
+          </div>
+          <FirestoreFileLink 
+            url={fileUrl} 
+            filename={getFileName(fileUrl)}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-slate-600 dark:text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+          >
+            <Download size={14} />
+            <span>이미지 원본 다운로드</span>
+          </FirestoreFileLink>
+        </div>
+      );
     }
+    
     return (
-      <a 
-        href={fileUrl} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="flex items-center gap-4 p-6 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-[2rem] transition-colors group"
-      >
-        <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">
-          <FileText size={32} />
+      <div key={idx} className="flex items-center gap-4 px-6 py-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/80 rounded-[2rem] transition-all group w-full">
+        <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform flex-shrink-0">
+          <FileText size={28} />
         </div>
         <div className="flex-1 overflow-hidden">
-          <p className="text-base font-black text-slate-800 dark:text-slate-200 truncate">{getFileName(fileUrl)}</p>
-          <p className="text-sm text-indigo-600 dark:text-indigo-400 font-bold mt-1 inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-full">
-            <Download size={14} /> 파일 다운로드
+          <p className="text-base font-black text-slate-800 dark:text-slate-200 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+            {getFileName(fileUrl)}
           </p>
+          <FirestoreFileLink 
+            url={fileUrl} 
+            filename={getFileName(fileUrl)}
+            className="text-sm font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400"
+          >
+            <Download size={14} /> 파일 다운로드
+          </FirestoreFileLink>
         </div>
-      </a>
+      </div>
     );
   };
 
@@ -526,7 +556,7 @@ export default function Board({ type, title }: BoardProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 gap-2 md:gap-3">
         {posts.map((post) => (
           <motion.div 
             key={post.id}
@@ -538,89 +568,62 @@ export default function Board({ type, title }: BoardProps) {
               setSelectedPost(post);
             }}
             className={cn(
-              "bg-white dark:bg-slate-900 p-6 md:p-8 rounded-[3rem] border shadow-sm group hover:shadow-xl transition-all relative overflow-hidden cursor-pointer",
+              "bg-white dark:bg-slate-900 px-4 py-3 md:px-6 md:py-4 rounded-xl md:rounded-2xl border shadow-sm group hover:shadow-md transition-all relative overflow-hidden cursor-pointer",
               post.isPinned ? "border-indigo-200 bg-indigo-50/10 dark:bg-indigo-900/10 dark:border-indigo-900" : "border-slate-100 dark:border-slate-800"
             )}
           >
-            {post.isPinned && (
-              <div className="absolute top-0 left-0 px-4 py-1.5 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-br-2xl flex items-center gap-1 z-10">
-                <Pin size={10} fill="white" /> PINNED
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 text-xs flex-shrink-0">
+                <div className="w-full h-full rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center border border-indigo-100 dark:border-indigo-800 overflow-hidden shadow-inner">
+                  <UserAvatarDisplay userId={post.authorId} name={post.authorName} />
+                </div>
               </div>
-            )}
-
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
+              
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 text-sm overflow-hidden shadow-inner border border-indigo-100 dark:border-indigo-800">
-                    {post.authorId === 'admin' || post.authorName === '관리자' ? (
-                      <Crown size={18} className="fill-indigo-600/20" />
-                    ) : (
-                      <UserAvatarDisplay userId={post.authorId} name={post.authorName} />
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-sm md:text-base font-bold tracking-tight text-slate-800 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                    {post.isPinned && <Pin size={12} className="inline mr-1.5 text-indigo-600 fill-indigo-600 mb-0.5" />}
+                    {post.title}
+                  </h3>
+                  <div className="hidden sm:flex items-center gap-3 text-slate-400 dark:text-slate-600 shrink-0">
+                    <div className="flex items-center gap-1">
+                      <Eye size={14} className="opacity-50" />
+                      <span className="text-[10px] font-bold tabular-nums">{post.views}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Heart size={14} className={post.likes > 0 ? "text-pink-500 fill-pink-500" : "opacity-50"} />
+                      <span className="text-[10px] font-bold tabular-nums">{post.likes}</span>
+                    </div>
+                    {post.commentCount > 0 && (
+                      <div className="flex items-center gap-1">
+                        <MessageSquare size={14} className="text-indigo-500 fill-indigo-500/10" />
+                        <span className="text-[10px] font-bold tabular-nums">{post.commentCount}</span>
+                      </div>
                     )}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-1">
-                        {post.authorName}
-                        {(post.authorId === 'admin' || post.authorName === '관리자') && <Crown size={12} className="fill-indigo-600/20" />}
-                      </span>
-                    </div>
-                    <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500">{formatDate(post.createdAt)}</span>
-                  </div>
                 </div>
-
-                <h3 className="text-2xl font-black mb-4 tracking-tight leading-tight text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{post.title}</h3>
                 
-                {post.files && post.files.length > 0 ? (
-                  <div className={cn(
-                    "mb-6 grid gap-2",
-                    post.files.length === 1 ? "grid-cols-1" : "grid-cols-2"
-                  )}>
-                    {post.files.map((file, i) => (
-                      <div key={i} className="rounded-3xl overflow-hidden border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 p-2">
-                        {renderFileAttachment(file, i)}
-                      </div>
-                    ))}
-                  </div>
-                ) : post.fileData ? (
-                  <div className="mb-6 rounded-3xl overflow-hidden border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 p-2">
-                    {renderFileAttachment(post.fileData, 0)}
-                  </div>
-                ) : null}
-                
-                <p className="text-slate-500 dark:text-slate-400 font-medium leading-relaxed whitespace-pre-wrap line-clamp-2">
-                  {post.content}
-                </p>
-
-                <div className="mt-8 flex items-center justify-between">
-                  <div className="flex items-center gap-6">
-                    <button 
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        await StorageService.togglePostLike(post.id);
-                        loadPosts();
-                      }}
-                      className="flex items-center gap-1.5 text-slate-400 dark:text-slate-600 hover:text-pink-500 transition-colors"
-                    >
-                      <Heart size={18} />
-                      <span className="text-xs font-bold tabular-nums">{post.likes}</span>
-                    </button>
-                    <div className="flex items-center gap-1.5 text-slate-400 dark:text-slate-600">
-                      <Eye size={18} />
-                      <span className="text-xs font-bold tabular-nums">{post.views}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-slate-400 dark:text-slate-600">
-                      <MessageSquare size={18} />
-                      <span className="text-xs font-bold tabular-nums">
-                        {post.commentCount || 0}
-                      </span>
-                    </div>
-                  </div>
-
+                <div className="flex items-center justify-between mt-0.5 md:mt-1">
                   <div className="flex items-center gap-2">
-                    <div className="ml-auto w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:bg-slate-100 dark:group-hover:bg-slate-700 transition-all">
-                      <ChevronRight size={20} />
+                    <span className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                      {post.authorName}
+                      {(post.authorId === 'admin' || post.authorName === '관리자') && <AdminCrown size={10} />}
+                    </span>
+                    <span className="text-[8px] text-slate-300 dark:text-slate-700 font-black">•</span>
+                    <span className="text-[10px] md:text-[11px] font-bold text-slate-400 dark:text-slate-500">{formatDate(post.createdAt)}</span>
+                  </div>
+                  
+                  <div className="sm:hidden flex items-center gap-2 text-slate-400 dark:text-slate-600">
+                    <div className="flex items-center gap-0.5">
+                      <Heart size={10} className={post.likes > 0 ? "text-pink-500 fill-pink-500" : ""} />
+                      <span className="text-[9px] font-bold">{post.likes}</span>
                     </div>
+                    {post.commentCount > 0 && (
+                      <div className="flex items-center gap-0.5">
+                        <MessageSquare size={10} className="text-indigo-500" />
+                        <span className="text-[9px] font-bold">{post.commentCount}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -715,7 +718,15 @@ export default function Board({ type, title }: BoardProps) {
       </AnimatePresence>
 
       <AnimatePresence>
-        {selectedPost && (
+        {selectedPost && (() => {
+          const allPostFiles = (selectedPost.files && selectedPost.files.length > 0)
+            ? selectedPost.files
+            : selectedPost.fileData ? [selectedPost.fileData] : [];
+          const allImageFiles = allPostFiles.filter(isImageFile);
+          const featuredImage = allImageFiles.length > 0 ? allImageFiles[0] : null;
+          const remainingFiles = allPostFiles.filter(f => f !== featuredImage);
+
+          return (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -730,18 +741,24 @@ export default function Board({ type, title }: BoardProps) {
               className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/5 overflow-hidden flex flex-col max-h-[90vh]"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Minimal Header */}
-              <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+              {/* Navigation & Metadata Header */}
+              <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
-                    <Pin size={16} strokeWidth={3} />
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
+                    <Pin size={20} strokeWidth={3} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest leading-none mb-1">{title.substring(0, 10)}</p>
+                    <p className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] leading-none mb-1">{title.substring(0, 10)}</p>
                     <p className="text-xs font-black text-slate-400 uppercase tracking-tight leading-none">Detail View</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-4">
+                  <div className="hidden sm:flex items-center gap-2">
+                    <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/5 rounded-full text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                      <Clock size={12} />
+                      {formatDate(selectedPost.createdAt)}
+                    </div>
+                  </div>
                   <button 
                     onClick={() => setSelectedPost(null)}
                     className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-400"
@@ -751,19 +768,19 @@ export default function Board({ type, title }: BoardProps) {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-8 md:p-10">
-                <div className="space-y-10">
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="p-8 md:p-12 space-y-12">
                   {/* Title & Author Section */}
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="flex flex-wrap items-center gap-3">
-                      <div className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">
+                      <div className="px-4 py-1.5 bg-indigo-600 text-white rounded-full text-[11px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-600/20">
                         {formatDate(selectedPost.createdAt)}
                       </div>
-                      <div className="px-3 py-1 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">
-                        By {selectedPost.authorName}
+                      <div className="px-4 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5 text-slate-500 dark:text-slate-400 rounded-full text-[11px] font-black uppercase tracking-[0.2em]">
+                        BY {selectedPost.authorName}
                       </div>
                     </div>
-                    <h2 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase">
+                    <h2 className="text-xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase">
                       {selectedPost.title}
                     </h2>
                   </div>
@@ -785,59 +802,48 @@ export default function Board({ type, title }: BoardProps) {
                       <Eye size={24} />
                       <span className="font-black tabular-nums">{selectedPost.views || 0}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-slate-400">
-                      <MessageSquare size={24} />
-                      <span className="font-black tabular-nums">{selectedPost.commentCount || 0}</span>
-                    </div>
                   </div>
 
-                  {/* Content */}
-                  <div className="space-y-6">
-                    <div className="text-slate-700 dark:text-slate-300 leading-relaxed font-semibold whitespace-pre-wrap text-xl">
-                      {selectedPost.content}
-                    </div>
+                  {/* Content Body */}
+                  <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-base md:text-lg bg-slate-50/50 dark:bg-slate-800/20 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 min-h-[200px]">
+                    {selectedPost.content}
                   </div>
 
-                  {/* Files / Images */}
-                  {((selectedPost.files && selectedPost.files.length > 0) || selectedPost.fileData) && (
-                    <div className="space-y-4">
-                      <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">Attachments</h3>
-                      <div className="grid grid-cols-1 gap-6">
-                        {(selectedPost.files && selectedPost.files.length > 0) ? (
-                          selectedPost.files.map((file, idx) => (
-                             <div key={idx} className="rounded-[2.5rem] overflow-hidden border border-slate-100 dark:border-white/5 shadow-lg bg-slate-50 dark:bg-slate-800 p-2">
-                               {renderLargeFileAttachment(file, idx)}
-                             </div>
-                          ))
-                        ) : selectedPost.fileData ? (
-                          <div className="rounded-[2.5rem] overflow-hidden border border-slate-100 dark:border-white/5 shadow-lg bg-slate-50 dark:bg-slate-800 p-2">
-                            {renderLargeFileAttachment(selectedPost.fileData, 0)}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Comments Section in Modal */}
                   <div className="border-t border-slate-100 dark:border-white/5 pt-10">
                     <CommentSection post={selectedPost} />
                   </div>
+
+                  {/* Attachments Section */}
+                  {allPostFiles.length > 0 && (
+                    <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-white/5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">첨부 파일</label>
+                      <div className="grid grid-cols-1 gap-4">
+                        {allPostFiles.map((file, idx) => (
+                          <div key={idx}>
+                            {renderLargeFileAttachment(file, idx, allPostFiles)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 flex justify-between items-center">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-xs overflow-hidden">
+                    <div className="w-10 h-10 flex items-center justify-center font-black text-xs overflow-visible">
                       {selectedPost.authorId === 'admin' || selectedPost.authorName === '관리자' ? (
-                        <Crown size={18} className="fill-white/20" />
+                        <AdminCrown size={20} />
                       ) : (
-                        <UserAvatarDisplay userId={selectedPost.authorId} name={selectedPost.authorName} />
+                        <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white overflow-hidden">
+                          <UserAvatarDisplay userId={selectedPost.authorId} name={selectedPost.authorName} />
+                        </div>
                       )}
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Author</p>
                       <p className="text-sm font-black text-slate-900 dark:text-white leading-none flex items-center gap-1">
                         {selectedPost.authorName}
-                        {(selectedPost.authorId === 'admin' || selectedPost.authorName === '관리자') && <Crown size={12} className="text-indigo-600" />}
+                        {(selectedPost.authorId === 'admin' || selectedPost.authorName === '관리자') && <AdminCrown size={12} />}
                       </p>
                     </div>
                   </div>
@@ -851,6 +857,17 @@ export default function Board({ type, title }: BoardProps) {
               </div>
             </motion.div>
           </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+      
+      <AnimatePresence>
+        {galleryState && (
+          <ImageGallery 
+            images={galleryState.images} 
+            initialIndex={galleryState.index} 
+            onClose={() => setGalleryState(null)} 
+          />
         )}
       </AnimatePresence>
     </div>

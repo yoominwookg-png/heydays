@@ -12,8 +12,7 @@ import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  browserPopupRedirectResolver,
-  signInWithCustomToken
+  browserPopupRedirectResolver
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -23,9 +22,8 @@ import { StorageService } from './storage';
 interface AuthContextType {
   user: User | null;
   loginWithGoogle: () => Promise<void>;
-  loginWithKakao: () => Promise<void>;
   loginWithId: (id: string, pass: string) => Promise<void>;
-  signupWithId: (id: string, pass: string, name: string, bio: string, avatar?: string) => Promise<void>;
+  signupWithId: (id: string, pass: string, name: string, bio: string, avatar?: string | File | Blob) => Promise<void>;
   logout: () => Promise<void>;
   isLoading: boolean;
 }
@@ -98,6 +96,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             createdAt: Date.now(),
           };
           
+          const isGoogleSignUp = firebaseUser.providerData.some(p => p.providerId === 'google.com');
+          if (isGoogleSignUp) {
+            try {
+              await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+            } catch (e) {
+              console.error('Failed to auto-create user doc for google user', e);
+            }
+          }
+          
           setUser(newUser);
         }
       } else {
@@ -130,60 +137,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const loginWithKakao = async () => {
-    return new Promise<void>(async (resolve, reject) => {
-      try {
-        // 1. Fetch Kakao Auth URL
-        const response = await fetch('/api/auth/kakao/url');
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Failed to get Kakao auth URL');
-        }
-        const { url } = await response.json();
-
-        // 2. Open Popup
-        const authWindow = window.open(
-          url,
-          'kakao_oauth_popup',
-          'width=500,height=600'
-        );
-
-        if (!authWindow) {
-          throw new Error('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.');
-        }
-
-        // 3. Listen for postMessage
-        const handleMessage = async (event: MessageEvent) => {
-          // 보안: 오리진 체크 (AI Studio 환경 대응)
-          if (!event.origin.endsWith('.run.app') && !event.origin.includes('localhost')) {
-            return;
-          }
-
-          if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.provider === 'kakao') {
-            window.removeEventListener('message', handleMessage);
-            const { token } = event.data;
-
-            try {
-              // 4. Sign in with Custom Token
-              await signInWithCustomToken(auth, token);
-              localStorage.setItem('heydays_login_timestamp', Date.now().toString());
-              resolve();
-            } catch (error) {
-              console.error('Firebase custom token login failed:', error);
-              reject(error);
-            }
-          }
-        };
-
-        window.addEventListener('message', handleMessage);
-      } catch (error: any) {
-        console.error('Kakao login failed:', error);
-        alert(error.message || '카카오 로그인 중 오류가 발생했습니다.');
-        reject(error);
-      }
-    });
-  };
-
   const loginWithId = async (id: string, pass: string) => {
     const email = id.includes('@') ? id.toLowerCase() : `${id.toLowerCase()}@heydays.com`;
     // 파이어베이스는 최소 6자리를 요구하므로, 6자리 미만인 경우 내부적으로 패딩 처리
@@ -214,7 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signupWithId = async (id: string, pass: string, name: string, bio: string, avatar?: string | File) => {
+  const signupWithId = async (id: string, pass: string, name: string, bio: string, avatar?: string | File | Blob) => {
     const email = id.includes('@') ? id.toLowerCase() : `${id.toLowerCase()}@heydays.com`;
     // 파이어베이스는 최소 6자리를 요구하므로, 6자리 미만인 경우 내부적으로 패딩 처리
     const firebasePass = pass.length < 6 ? pass.padEnd(6, '0') : pass;
@@ -224,12 +177,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('heydays_login_timestamp', Date.now().toString());
       
       let avatarUrl = '';
-      if (avatar instanceof File) {
-        const path = `avatars/${result.user.uid}/${Date.now()}_${avatar.name}`;
-        avatarUrl = await StorageService.uploadFile(path, avatar);
-      } else if (typeof avatar === 'string') {
+      if (avatar instanceof File || avatar instanceof Blob) {
+        const path = `avatars/${result.user.uid}/${Date.now()}`;
+        avatarUrl = await StorageService.uploadFile(path, avatar, { maxWidthOrHeight: 400, maxSizeMB: 0.1, quality: 0.6 });
+      } else if (typeof avatar === 'string' && (avatar.startsWith('http') || avatar.startsWith('firestore://'))) {
         avatarUrl = avatar;
       }
+      
+      // If no avatar was provided or it's a temp URL we couldn't upload, use empty string
+      // (The above condition avatar.startsWith('http') handles external URLs like Google profile pics)
 
       const newUser: User = {
         id: result.user.uid,
@@ -260,7 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loginWithGoogle, loginWithKakao, loginWithId, signupWithId, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, loginWithGoogle, loginWithId, signupWithId, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

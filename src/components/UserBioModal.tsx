@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Users, Crown, Trash2, RotateCcw } from 'lucide-react';
+import { X, Users, Trash2, RotateCcw, Send } from 'lucide-react';
+import { AdminCrown } from './AdminCrown';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, UserRole } from '../types';
 import { useAuth } from '../services/auth';
 import { StorageService } from '../services/storage';
+import SendMessageModal from './SendMessageModal';
 
 interface UserBioModalProps {
   user: User | null;
@@ -15,6 +17,7 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
   const [user, setUser] = useState<User | null>(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [showConfirmPermanentDelete, setShowConfirmPermanentDelete] = useState(false);
+  const [isSendMessageModalOpen, setIsSendMessageModalOpen] = useState(false);
 
   useEffect(() => {
     setUser(initialUser);
@@ -107,13 +110,19 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
                       </span>
                     </div>
                   )}
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 overflow-hidden shrink-0">
-                    {user.avatar ? (
-                      <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-                    ) : user.role === UserRole.ADMIN ? (
-                      <Crown size={20} className="fill-indigo-600/20" />
+                  <div 
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 overflow-visible shrink-0 transition-all"
+                  >
+                    {user.role === UserRole.ADMIN ? (
+                      <AdminCrown size={24} />
+                    ) : user.avatar ? (
+                      <div className="w-full h-full rounded-2xl overflow-hidden border border-indigo-100 dark:border-indigo-900/30">
+                        <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                      </div>
                     ) : (
-                      user.name.charAt(0)
+                      <div className="w-full h-full rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                        {user.name.charAt(0)}
+                      </div>
                     )}
                   </div>
                   <div>
@@ -129,6 +138,16 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
                     {user.bio || '자기소개가 없습니다.'}
                   </p>
                 </div>
+
+                {!isSelf && !isDeleted && (
+                  <button 
+                    onClick={() => setIsSendMessageModalOpen(true)}
+                    className="w-full mt-6 py-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 rounded-2xl font-black hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Send size={18} strokeWidth={3} />
+                    <span>쪽지 보내기</span>
+                  </button>
+                )}
 
                 {isAdmin && !isSelf && (
                   <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
@@ -251,6 +270,13 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
             </AnimatePresence>
 
           </motion.div>
+          
+          <SendMessageModal 
+            isOpen={isSendMessageModalOpen}
+            onClose={() => setIsSendMessageModalOpen(false)}
+            onSent={() => setIsSendMessageModalOpen(false)}
+            initialRecipientId={user.id}
+          />
         </motion.div>
       )}
     </AnimatePresence>

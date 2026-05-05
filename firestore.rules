@@ -20,11 +20,13 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9._\\-]+$');
     }
 
     function incoming() {
@@ -50,13 +52,14 @@ service cloud.firestore {
 
       allow get: if isSignedIn() && isValidId(userId);
       allow list: if isSignedIn(); // Band members can see the directory
-      allow create: if isVerified() && isOwner(userId) && 
+      // Allow sign-in level access for initial profile creation to avoid verification bridge problem
+      allow create: if isSignedIn() && isOwner(userId) && 
                       isValidUser(incoming()) && 
                       isValidId(userId);
       allow update: if isVerified() && isValidId(userId) && (
                       (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'bio', 'deletedAt']) && isValidUser(incoming())) ||
                       (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'deletedAt']) && isValidUser(incoming()))
-                    );
+                    ) || (isVerified() && isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'bio']) && isValidUser(incoming()));
       allow delete: if isVerified() && isValidId(userId) && isAdmin();
     }
     
@@ -239,6 +242,27 @@ service cloud.firestore {
                       (incoming().userId != 'all' && incoming().userId is string)
                     );
       allow delete: if isVerified() && (isAdmin() || isOwner(existing().userId)) && isValidId(notificationId);
+    }
+
+    // 9. Attachments (Direct Firestore Storage)
+    match /attachments/{attachmentId} {
+      function isValidAttachment(data) {
+        return data.data is string && data.data.size() <= 1500000 && // Account for base64 overhead
+               data.contentType is string &&
+               data.size is number && data.size <= 1048576 && // 1MB raw limit
+               data.userId == request.auth.uid && // Owner check
+               data.createdAt is number;
+      }
+      
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidAttachment(incoming());
+      allow update: if false; // Attachments are immutable
+      allow delete: if isVerified() && (isOwner(existing().userId) || isAdmin());
+    }
+
+    // 10. System Health Check
+    match /system/health {
+      allow read: if true;
     }
   }
 }

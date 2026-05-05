@@ -16,6 +16,7 @@ import {
   ZoomIn,
   ZoomOut,
   X,
+  Clock,
   FileText,
   StickyNote,
   Trash2,
@@ -23,6 +24,7 @@ import {
   Plus,
   PenLine,
   MessageCircle,
+  MessageSquare,
   Crown,
   Eye,
   Heart,
@@ -31,18 +33,27 @@ import {
 import { StorageService } from '../services/storage';
 import { Score, ScoreNote, UserRole, Comment, User } from '../types';
 import { useAuth } from '../services/auth';
+import { useUsersContext } from '../contexts/UsersContext';
 import { cn, formatDate } from '../lib/utils';
 
 import FileUploadZone from '../components/FileUploadZone';
 import UserBioModal from '../components/UserBioModal';
 import { UserAvatarDisplay } from '../components/UserAvatarDisplay';
+import { FirestoreImage } from '../components/FirestoreImage';
+import { FirestoreFileLink } from '../components/FirestoreFileLink';
+import ImageGallery from '../components/ImageGallery';
+import { AdminCrown } from '../components/AdminCrown';
 
 const isImageFile = (url: string) => {
-  return url.match(/\.(jpeg|jpg|gif|png|webp|bmp|svg)(?:\?|%3F|$)/i) !== null;
+  return url.match(/\.(jpeg|jpg|gif|png|webp)(?:_|\?|%3F|$)/i) !== null;
 };
 
 const getFileName = (url: string) => {
   try {
+    if (url.startsWith('firestore://')) {
+      const id = url.split('/').pop() || '';
+      return id.split('_').slice(2, -1).join('_') || '파일명 없음';
+    }
     const urlObj = new URL(url);
     const parts = urlObj.pathname.split('/');
     const lastPart = parts[parts.length - 1];
@@ -52,27 +63,53 @@ const getFileName = (url: string) => {
   }
 };
 
-const renderLargeFileAttachment = (fileUrl: string, idx: number) => {
+const renderLargeFileAttachment = (fileUrl: string, idx: number, allFiles: string[], onImageClick: (images: string[], index: number) => void) => {
   if (isImageFile(fileUrl)) {
-    return <img src={fileUrl} alt={`Attachment ${idx + 1}`} className="max-w-full h-auto shadow-2xl rounded-sm border border-slate-100 dark:border-white/5" />;
+    const imageFiles = allFiles.filter(f => isImageFile(f));
+    const imageIndex = imageFiles.indexOf(fileUrl);
+    
+    return (
+      <div key={idx} className="flex flex-col items-start gap-4 py-2 w-full text-left">
+      <div 
+        className="cursor-zoom-in w-full max-w-sm overflow-hidden rounded-2xl shadow-md hover:shadow-lg transition-all border border-slate-200 dark:border-slate-700"
+        onClick={() => onImageClick(imageFiles, imageIndex >= 0 ? imageIndex : 0)}
+      >
+        <FirestoreImage 
+          src={fileUrl} 
+          alt={`Attachment ${idx + 1}`} 
+          className="w-full h-auto object-cover aspect-[3/4] hover:scale-105 transition-transform duration-500" 
+        />
+      </div>
+        <FirestoreFileLink 
+          url={fileUrl} 
+          filename={getFileName(fileUrl)}
+          className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-slate-600 dark:text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+        >
+          <Download size={14} />
+          <span>이미지 원본 다운로드</span>
+        </FirestoreFileLink>
+      </div>
+    );
   }
+
   return (
-    <a 
-      href={fileUrl} 
-      target="_blank" 
-      rel="noopener noreferrer"
-      className="flex items-center gap-4 p-6 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-[2rem] transition-colors group w-full max-w-2xl mx-auto shadow-xl border border-slate-100 dark:border-white/5"
-    >
-      <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">
-        <FileText size={32} />
+    <div key={idx} className="flex items-center gap-4 px-6 py-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/80 rounded-[2rem] transition-all group w-full text-left">
+      <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform flex-shrink-0">
+        <FileText size={28} />
       </div>
       <div className="flex-1 overflow-hidden">
-        <p className="text-base font-black text-slate-800 dark:text-slate-200 truncate">{getFileName(fileUrl)}</p>
-        <p className="text-sm text-indigo-600 dark:text-indigo-400 font-bold mt-1 inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-full">
-          <Download size={14} /> 파일 다운로드
+        <p className="text-base font-black text-slate-800 dark:text-slate-200 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+          {getFileName(fileUrl)}
         </p>
+        <FirestoreFileLink 
+          url={fileUrl} 
+          filename={getFileName(fileUrl)}
+          className="text-sm font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400"
+        >
+          <Download size={14} /> 파일 다운로드
+        </FirestoreFileLink>
       </div>
-    </a>
+    </div>
   );
 };
 
@@ -83,7 +120,9 @@ export default function ScoreLibrary() {
   const [viewingBioUser, setViewingBioUser] = useState<User | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [scoreToDelete, setScoreToDelete] = useState<Score | null>(null);
+  const [galleryState, setGalleryState] = useState<{ images: string[], index: number } | null>(null);
   const { user } = useAuth();
+  const { users } = useUsersContext();
 
   const [isUploading, setIsUploading] = useState(false);
   const [editingScore, setEditingScore] = useState<Score | null>(null);
@@ -153,11 +192,12 @@ export default function ScoreLibrary() {
       }
       
       const finalUrls = [...existingUrls, ...uploadedUrls];
-      const scoreData: Partial<Score> = {
+        const scoreData: Partial<Score> = {
         title: newScoreTitle.trim(),
         description: newScoreDescription.trim(),
         fileData: finalUrls[0],
         files: finalUrls,
+        authorName: editingScore?.authorName || (editingScore?.authorId === 'admin' ? '관리자' : '헤이데이즈')
       };
 
       if (editingScore) {
@@ -173,6 +213,7 @@ export default function ScoreLibrary() {
           ...scoreData as Score,
           fileType: 'jpg',
           authorId: user?.id || '',
+          authorName: user?.name || '헤이데이즈',
           createdAt: Date.now(),
           likes: 0,
           views: 0,
@@ -253,45 +294,73 @@ export default function ScoreLibrary() {
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-2 md:gap-3">
         {filteredScores.map((score) => (
           <motion.div 
             key={score.id}
-            whileHover={{ y: -8 }}
-            className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 overflow-hidden transition-all group flex flex-col h-full"
+            whileHover={{ scale: 1.002 }}
+            onClick={() => { setSelectedScore(score); setIsViewerOpen(true); }}
+            className="bg-white dark:bg-slate-900 px-4 py-3 md:px-6 md:py-4 rounded-xl md:rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm group hover:shadow-md transition-all relative overflow-hidden cursor-pointer"
           >
-            <div 
-              className="aspect-[3/4] bg-slate-50 dark:bg-slate-800 relative flex items-center justify-center cursor-pointer overflow-hidden"
-              onClick={() => { setSelectedScore(score); setIsViewerOpen(true); }}
-            >
-              {score.fileData ? (
-                isImageFile(score.fileData) ? (
-                  <img src={score.fileData} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 text-xs flex-shrink-0">
+                {score.authorId === 'admin' ? (
+                  <AdminCrown size={18} />
                 ) : (
-                  <div className="flex flex-col items-center gap-4 text-slate-300 dark:text-slate-600 bg-slate-50 dark:bg-slate-800 w-full h-full justify-center">
-                    <FileText size={64} strokeWidth={1} className="text-indigo-200 dark:text-indigo-900" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-white dark:bg-slate-900 rounded-full truncate max-w-[80%] border border-slate-200 dark:border-slate-800">{getFileName(score.fileData)}</span>
+                  <div className="w-full h-full rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center border border-indigo-100 dark:border-indigo-800 overflow-hidden shadow-inner uppercase">
+                    <UserAvatarDisplay userId={score.authorId} name="H" />
                   </div>
-                )
-              ) : (
-                <div className="flex flex-col items-center gap-4 text-slate-300 dark:text-slate-600">
-                  <Music size={64} strokeWidth={1} />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-slate-100 dark:bg-slate-700 rounded-full">미리보기 없음</span>
-                </div>
-              )}
-              <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 transition-colors flex items-center justify-center">
-                 <div className="p-4 bg-white/20 backdrop-blur-md rounded-2xl shadow-xl text-white opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all border border-white/20">
-                  <Maximize2 size={24} strokeWidth={3} />
-                </div>
+                )}
               </div>
-            </div>
-            <div className="p-6">
-              <h3 className="font-black text-lg mb-1 truncate dark:text-white tracking-tight">{score.title}</h3>
-              <div className="flex items-center justify-between text-slate-400 dark:text-slate-500">
-                <span className="text-[10px] font-black uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">{score.fileType === 'pdf' ? 'PDF' : 'IMAGE'}</span>
-                <div className="flex items-center gap-1.5 text-[10px] font-black font-mono">
-                  <MessageCircle size={14} className="text-slate-300 dark:text-slate-600" />
-                  <span>{score.commentCount || 0}</span>
+              
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-sm md:text-base font-bold tracking-tight text-slate-800 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                    {score.title}
+                    <span className="ml-2 text-[9px] font-black uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md text-slate-400">
+                      {score.fileType === 'pdf' ? 'PDF' : 'IMAGE'}
+                    </span>
+                  </h3>
+                  <div className="hidden sm:flex items-center gap-3 text-slate-400 dark:text-slate-600 shrink-0">
+                    <div className="flex items-center gap-1">
+                      <Eye size={14} className="opacity-50" />
+                      <span className="text-[10px] font-bold tabular-nums">{score.views || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Heart size={14} className={score.likes > 0 ? "text-pink-500 fill-pink-500" : "opacity-50"} />
+                      <span className="text-[10px] font-bold tabular-nums">{score.likes || 0}</span>
+                    </div>
+                    {score.commentCount > 0 && (
+                      <div className="flex items-center gap-1">
+                        <MessageSquare size={14} className="text-indigo-500 fill-indigo-500/10" />
+                        <span className="text-[10px] font-bold tabular-nums">{score.commentCount}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between mt-0.5 md:mt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                      {users[score.authorId]?.name || score.authorName}
+                      {score.authorId === 'admin' && <AdminCrown size={10} />}
+                    </span>
+                    <span className="text-[8px] text-slate-300 dark:text-slate-700 font-black">•</span>
+                    <span className="text-[10px] md:text-[11px] font-bold text-slate-400 dark:text-slate-500">{formatDate(score.createdAt)}</span>
+                  </div>
+                  
+                  <div className="sm:hidden flex items-center gap-2 text-slate-400 dark:text-slate-600">
+                    <div className="flex items-center gap-0.5">
+                      <Heart size={10} className={score.likes > 0 ? "text-pink-500 fill-pink-500" : ""} />
+                      <span className="text-[9px] font-bold">{score.likes || 0}</span>
+                    </div>
+                    {score.commentCount > 0 && (
+                      <div className="flex items-center gap-0.5">
+                        <MessageSquare size={10} className="text-indigo-500" />
+                        <span className="text-[9px] font-bold">{score.commentCount}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -385,6 +454,17 @@ export default function ScoreLibrary() {
             onEdit={(s) => { setIsViewerOpen(false); handleEdit(s); }}
             onDelete={(s) => { deleteScore(s); }}
             onShowBio={handleShowBio}
+            onImageClick={(images, index) => setGalleryState({ images, index })}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {galleryState && (
+          <ImageGallery 
+            images={galleryState.images}
+            initialIndex={galleryState.index}
+            onClose={() => setGalleryState(null)}
           />
         )}
       </AnimatePresence>
@@ -430,15 +510,20 @@ export default function ScoreLibrary() {
   );
 }
 
-function ScoreViewer({ score, onClose, onEdit, onDelete, onShowBio }: { 
+function ScoreViewer({ score, onClose, onEdit, onDelete, onShowBio, onImageClick }: { 
   score: Score; 
   onClose: () => void;
   onEdit: (s: Score) => void;
   onDelete: (s: Score) => void;
   onShowBio: (userId: string) => void;
+  onImageClick: (images: string[], index: number) => void;
 }) {
-  const [zoom, setZoom] = useState(1);
   const { user } = useAuth();
+  const { users } = useUsersContext();
+  const [zoom, setZoom] = useState(1);
+  const allImageFiles = score.files?.filter(isImageFile) || [];
+  const featuredImage = allImageFiles.length > 0 ? allImageFiles[0] : null;
+  const remainingFiles = (score.files || []).filter(f => f !== featuredImage);
 
   return (
     <motion.div 
@@ -446,134 +531,147 @@ function ScoreViewer({ score, onClose, onEdit, onDelete, onShowBio }: {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+      onClick={onClose}
     >
       <motion.div 
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
         className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/5 overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-50 dark:border-white/5 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-10">
-          <div className="flex items-center gap-4">
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500">
-              <X size={24} />
-            </button>
-            <h2 className="text-xl font-black tracking-tight dark:text-white uppercase truncate max-w-[200px] md:max-w-md">악보 상세</h2>
+        {/* Navigation & Metadata Header */}
+        <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
+              <Plus size={20} strokeWidth={3} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] leading-none mb-1">Score Library</p>
+              <p className="text-xs font-black text-slate-400 uppercase tracking-tight leading-none">Detail View</p>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-2">
-            <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
-              <ZoomOut size={20} />
-            </button>
-            <span className="text-slate-900 dark:text-white text-xs font-black min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
-            <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
-              <ZoomIn size={20} />
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:flex items-center gap-2">
+              <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/5 rounded-full text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                <Clock size={12} />
+                {formatDate(score.createdAt)}
+              </div>
+            </div>
+            <div className="hidden md:flex items-center gap-2 mr-4">
+              <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+                <ZoomOut size={18} />
+              </button>
+              <span className="text-slate-900 dark:text-white text-[10px] font-black min-w-[35px] text-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+                <ZoomIn size={18} />
+              </button>
+            </div>
+            <button 
+              onClick={onClose}
+              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-400"
+            >
+              <X size={24} />
             </button>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8 md:p-12 custom-scrollbar bg-slate-50 dark:bg-slate-950/20">
-          <div className="space-y-10">
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">
-                <Music size={12} strokeWidth={3} />
-                {score.fileType.toUpperCase()}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="p-8 md:p-12 space-y-12">
+            {/* Title & Author Section */}
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="px-4 py-1.5 bg-indigo-600 text-white rounded-full text-[11px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-600/20">
+                  {formatDate(score.createdAt)}
+                </div>
+                <div className="px-4 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5 text-slate-500 dark:text-slate-400 rounded-full text-[11px] font-black uppercase tracking-[0.2em]">
+                  BY {users[score.authorId]?.name || score.authorName}
+                </div>
               </div>
-              <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase">
+              <h2 className="text-xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase">
                 {score.title}
-              </h1>
+              </h2>
               {score.description && (
-                <p className="text-slate-600 dark:text-slate-400 font-medium whitespace-pre-wrap leading-relaxed mt-4">
-                  {score.description}
-                </p>
-              )}
-            </div>
-
-            <div className="flex flex-col items-center gap-8 bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden">
-              {score.files && score.files.length > 0 ? (
-                score.files.map((file, i) => (
-                  <motion.div 
-                    key={i}
-                    style={{ scale: zoom }}
-                    className="origin-top w-full flex justify-center py-4"
-                  >
-                    {renderLargeFileAttachment(file, i)}
-                  </motion.div>
-                ))
-              ) : score.fileData ? (
-                <motion.div 
-                  style={{ scale: zoom }}
-                  className="origin-top w-full flex justify-center py-4"
-                >
-                  {renderLargeFileAttachment(score.fileData, 0)}
-                </motion.div>
-              ) : (
-                <div className="w-full aspect-[3/4] bg-slate-50 dark:bg-slate-800 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600 rounded-2xl">
-                  <Music size={120} strokeWidth={1} />
-                  <p className="text-2xl font-black mt-8">악보 데이터 없음</p>
+                <div className="space-y-6">
+                  <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] border-l-4 border-indigo-600 pl-4 py-1">상세 설명</h3>
+                  <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-lg bg-slate-50/50 dark:bg-slate-800/20 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5">
+                    {score.description}
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-100 dark:border-white/5 space-y-10">
-              {/* Interaction Stats */}
-              <div className="flex items-center gap-8 py-6 border-y border-slate-50 dark:border-white/5">
-                <button 
-                  onClick={async () => {
-                    await StorageService.toggleScoreLike(score.id);
-                    // We might need to refresh local score state if needed, but for now just local increment
-                    // For brevity, I'll assume state will be refreshed on next load or just local UI feed back
-                  }}
-                  className="flex items-center gap-2 text-slate-400 hover:text-pink-500 transition-colors"
-                >
-                  <Heart size={24} className={cn(score.likes && score.likes > 0 ? "fill-pink-500 text-pink-500" : "")} />
-                  <span className="font-black tabular-nums">{score.likes || 0}</span>
-                </button>
-                <div className="flex items-center gap-2 text-slate-400">
-                  <Eye size={24} />
-                  <span className="font-black tabular-nums">{score.views || 0}</span>
-                </div>
-                <div className="flex items-center gap-2 text-slate-400">
-                  <MessageCircle size={24} />
-                  <span className="font-black tabular-nums">{score.commentCount || 0}</span>
+            {/* Interaction Stats */}
+            <div className="flex items-center gap-8 py-6 border-y border-slate-100 dark:border-white/5">
+              <button 
+                onClick={async () => {
+                  await StorageService.toggleScoreLike(score.id);
+                  // Refreshing local UI for score detail
+                  // score.likes could be updated by parent refresh, but for detail view we just show the interaction
+                }}
+                className="flex items-center gap-2 text-slate-400 hover:text-pink-500 transition-colors"
+              >
+                <Heart size={24} className={cn(score.likes && score.likes > 0 ? "fill-pink-500 text-pink-500" : "")} />
+                <span className="font-black tabular-nums">{score.likes || 0}</span>
+              </button>
+              <div className="flex items-center gap-2 text-slate-400">
+                <Eye size={24} />
+                <span className="font-black tabular-nums">{score.views || 0}</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-400">
+                <MessageSquare size={24} />
+                <span className="font-black tabular-nums">{score.commentCount || 0}</span>
+              </div>
+            </div>
+
+            <CommentSection 
+              score={score} 
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onShowBio={onShowBio}
+            />
+
+            {/* Attachments Section */}
+            {score.files && score.files.length > 0 && (
+              <div className="mt-8 pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">첨부 파일</label>
+                <div className="grid grid-cols-1 gap-4">
+                  {score.files.map((file, idx) => (
+                    <div key={idx}>
+                      {renderLargeFileAttachment(file, idx, score.files!, onImageClick)}
+                    </div>
+                  ))}
                 </div>
               </div>
+            )}
 
-              <CommentSection 
-                score={score} 
-                onEdit={onEdit}
-                onDelete={onDelete}
-                onShowBio={onShowBio}
-              />
-
-              <div className="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-xs overflow-hidden">
-                    {score.authorId === 'admin' ? (
-                      <Crown size={18} className="fill-white/20" />
-                    ) : (
-                      'H'
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Author</p>
-                    <p className="text-sm font-black text-slate-900 dark:text-white leading-none flex items-center gap-1">
-                      {score.authorId === 'admin' ? '관리자' : '헤이데이즈'}
-                      {score.authorId === 'admin' && <Crown size={12} className="text-indigo-600" />}
-                    </p>
-                  </div>
+            <div className="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 flex items-center justify-center font-black text-xs overflow-visible">
+                  {score.authorId === 'admin' ? (
+                    <AdminCrown size={20} />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-slate-900 dark:bg-slate-800 flex items-center justify-center text-white overflow-hidden border border-slate-700">
+                      <UserAvatarDisplay userId={score.authorId} name="H" />
+                    </div>
+                  )}
                 </div>
-                
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={onClose}
-                    className="px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-lg"
-                  >
-                    닫기
-                  </button>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Author</p>
+                  <p className="text-sm font-black text-slate-900 dark:text-white leading-none flex items-center gap-1">
+                    {users[score.authorId]?.name || score.authorName}
+                    {score.authorId === 'admin' && <AdminCrown size={12} />}
+                  </p>
                 </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={onClose}
+                  className="px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-lg"
+                >
+                  닫기
+                </button>
               </div>
             </div>
           </div>
@@ -632,21 +730,21 @@ const CommentSection = ({ score, onEdit, onDelete, onShowBio }: {
     <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-6">
       <div className="flex items-center justify-between">
         <h4 className="font-black text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          댓글 {comments.length}
+          <MessageSquare size={16} /> 댓글 {comments.length}
         </h4>
         
         {(user?.role === UserRole.ADMIN || (user?.id && score.authorId === user.id)) && (
           <div className="flex items-center gap-2">
             <button 
               onClick={(e) => { e.stopPropagation(); onEdit(score); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg hover:bg-slate-900 dark:hover:bg-white hover:text-white dark:hover:text-slate-900 transition-all text-[10px] font-black uppercase tracking-widest"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all text-[10px] font-black uppercase tracking-widest"
             >
               <PenLine size={12} />
               수정
             </button>
             <button 
               onClick={(e) => { e.stopPropagation(); onDelete(score); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest"
             >
               <Trash2 size={12} />
               삭제
@@ -659,42 +757,47 @@ const CommentSection = ({ score, onEdit, onDelete, onShowBio }: {
         {comments.map((comment) => (
           <div key={comment.id} className="flex justify-between items-start group/comment bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-2xl text-left">
             <div className="flex gap-3 text-left">
-              <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/20 flex items-center justify-center flex-shrink-0 overflow-hidden font-black text-indigo-600 dark:text-indigo-400 text-[10px]">
-                <UserAvatarDisplay userId={comment.authorId} name={comment.authorName} />
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
+                {comment.authorId === 'admin' ? (
+                  <AdminCrown size={14} />
+                ) : (
+                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 w-full h-full flex items-center justify-center">
+                    <UserAvatarDisplay userId={comment.authorId} name={comment.authorName} />
+                  </span>
+                )}
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <button 
                     onClick={() => onShowBio(comment.authorId)}
-                    className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline"
+                    className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
                   >
                     {comment.authorName}
+                    {comment.authorId === 'admin' && <AdminCrown size={10} />}
                   </button>
-                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{new Date(comment.createdAt).toLocaleDateString()}</span>
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{formatDate(comment.createdAt)}</span>
                 </div>
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{comment.content}</p>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-300 leading-relaxed">{comment.content}</p>
               </div>
             </div>
             {(user?.role === UserRole.ADMIN || user?.id === comment.authorId) && (
-              <button onClick={() => setCommentToDelete(comment)} className="p-2 text-slate-300 hover:text-red-500">
+              <button onClick={() => setCommentToDelete(comment)} className="p-2 text-slate-300 hover:text-red-500 md:opacity-0 group-hover/comment:opacity-100 transition-all font-bold">
                 <Trash2 size={14} />
               </button>
             )}
           </div>
         ))}
+        {comments.length === 0 && <p className="text-center text-slate-400 dark:text-slate-600 py-4 font-medium text-sm">첫 번째 댓글을 남겨보세요!</p>}
       </div>
 
-      <form onSubmit={handleAddComment} className="flex gap-3">
+      <form onSubmit={handleAddComment}>
         <input 
           value={newComment}
           onChange={(e) => setNewComment(e.target.value)}
-          className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
+          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
           placeholder="댓글을 입력하세요..."
           required
         />
-        <button className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
-          <ChevronRight size={18} />
-        </button>
       </form>
 
       <AnimatePresence>

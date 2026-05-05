@@ -18,8 +18,7 @@ import {
   increment,
   onSnapshot
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, auth, storage } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { STORAGE_KEYS, APP_VERSION } from '../constants';
 import { User, Post, Schedule, Score, Comment, Message, Notification, OperationType, FirestoreErrorInfo, ListItem, ScoreNote } from '../types';
 
@@ -42,6 +41,17 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
+}
+
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+
+async function fileToBase64(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+  });
 }
 
 export const StorageService = {
@@ -434,66 +444,91 @@ export const StorageService = {
     }
   },
 
-  // Firebase Storage
-  async uploadFile(path: string, file: File | Blob): Promise<string> {
-    const { uploadBytesResumable, getDownloadURL } = await import('firebase/storage');
+  // Firestore Storage (Direct)
+  async uploadFile(path: string, file: File | Blob, compressionOptions?: { maxWidthOrHeight?: number; maxSizeMB?: number; quality?: number }): Promise<string> {
     const { compressImage } = await import('../lib/imageCompression');
     
-    // Auto-compress if it's an image File
-    let uploadFile = file;
-    if (file instanceof File && file.type.startsWith('image/')) {
-      try {
-        uploadFile = await compressImage(file);
-      } catch (err) {
-        console.warn('Compression skipped, using original file:', err);
+    // Create a timeout promise - Increased to 20s for large files
+    const timeout = (ms: number) => new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('업로드 시간이 초과되었습니다 (20초). 네트워크 상태를 확인해주세요.')), ms)
+    );
+
+    const uploadLogic = async () => {
+      // Auto-compress if it's an image File/Blob
+      let uploadFile = file;
+      if (file.type.startsWith('image/')) {
+        try {
+          // Pass target size if defined, otherwise defaults to 0.6MB
+          const compressed = await compressImage(file as File, compressionOptions);
+          if (compressed) uploadFile = compressed;
+        } catch (err) {
+          console.warn('Compression failed or skipped:', err);
+        }
       }
-    }
+
+      // Check size AFTER compression
+      // Firestore Document hard limit is 1,048,487 bytes total including overhead
+      const LIMIT = 1000 * 1024; // 1000KB (1MB)
+      if (uploadFile.size > LIMIT) {
+        throw new Error(`이미지 압축 후에도 용량이 1MB를 초과합니다 (${(uploadFile.size / 1024).toFixed(0)}KB). 훨씬 더 작은 해상도의 사진이나 다른 형식의 파일을 선택해주세요.`);
+      }
+
+      try {
+        // Convert to Base64
+        const base64Data = await fileToBase64(uploadFile);
+        
+        // Final sanity check for Firestore Document limit (1MB)
+        if (base64Data.length > 1024 * 1024) {
+          throw new Error('전송 데이터가 1MB를 초과했습니다. 더 작은 이미지를 선택해주세요.');
+        }
+
+        // Store in attachments collection
+        const attachmentId = path.replace(/\//g, '_').replace(/[^a-zA-Z0-9._-]/g, '_') + '_' + Date.now();
+        
+        await setDoc(doc(db, 'attachments', attachmentId), {
+          data: base64Data,
+          contentType: uploadFile.type,
+          size: uploadFile.size,
+          userId: auth.currentUser?.uid || null,
+          createdAt: Date.now()
+        });
+
+        return `firestore://attachments/${attachmentId}`;
+      } catch (error: any) {
+        if (error.message && (error.message.includes('image') || error.message.includes('데이터'))) throw error;
+        
+        // Improved error detection for ProgressEvent (FileReader)
+        if (error && (error instanceof ProgressEvent || (error as any).toString().includes('ProgressEvent'))) {
+          throw new Error('파일을 읽는 중 오류가 발생했습니다. 브라우저의 파일 접근 제한이나 메모리 부족이 원인일 수 있습니다.');
+        }
+        handleFirestoreError(error, OperationType.WRITE, `attachments/${path}`);
+        throw error;
+      }
+    };
+
+    // Race the upload logic against the 20s timeout
+    return Promise.race([uploadLogic(), timeout(20000)]) as Promise<string>;
+  },
+
+  async getFileData(ref: string): Promise<string | null> {
+    if (!ref.startsWith('firestore://')) return ref;
     
-    return new Promise((resolve, reject) => {
-      try {
-        const storageRef = ref(storage, path);
-        const uploadTask = uploadBytesResumable(storageRef, uploadFile);
-
-        // Increased timeout to 300 seconds (5 minutes) for larger files or slower connections
-        const timeout = setTimeout(() => {
-          uploadTask.cancel();
-          reject(new Error('Upload timed out after 300 seconds. Please check your network connection.'));
-        }, 300000);
-
-        uploadTask.on('state_changed', 
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            console.log(`Upload is ${progress.toFixed(1)}% done`);
-          }, 
-          (error) => {
-            clearTimeout(timeout);
-            if (error.code === 'storage/canceled') {
-              console.log('Upload was canceled (likely due to timeout)');
-            } else {
-              console.error('Error uploading file:', error);
-            }
-            reject(error);
-          }, 
-          async () => {
-            clearTimeout(timeout);
-            try {
-              const url = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve(url);
-            } catch (err) {
-              reject(err);
-            }
-          }
-        );
-      } catch (error) {
-        console.error('Error initiating upload:', error);
-        reject(error);
+    try {
+      const path = ref.replace('firestore://', '');
+      const [collectionName, id] = path.split('/');
+      const docSnap = await getDoc(doc(db, collectionName, id));
+      if (docSnap.exists()) {
+        return docSnap.data().data;
       }
-    });
+      return null;
+    } catch (error) {
+      console.error('Error fetching file data:', error);
+      return null;
+    }
   },
 
   async uploadFiles(folder: string, id: string, files: File[]): Promise<string[]> {
     const urls: string[] = [];
-    // Sequential upload is more reliable for "확실한 방법" as requested
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const fileName = `${Date.now()}_${i}_${file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase()}`;
@@ -506,17 +541,24 @@ export const StorageService = {
 
   async deleteFiles(urls: string[]) {
     if (!urls || urls.length === 0) return;
-    const deletePromises = urls.map(url => this.deleteFile(url));
-    await Promise.all(deletePromises);
+    
+    for (const url of urls) {
+      if (url.startsWith('firestore://')) {
+        await this.deleteFile(url);
+      }
+    }
   },
 
   async deleteFile(url: string) {
+    if (!url.startsWith('firestore://')) return;
+    
     try {
-      if (!url || !url.includes('firebasestorage')) return;
-      const storageRef = ref(storage, url);
-      await deleteObject(storageRef);
+      const path = url.replace('firestore://', '');
+      const [collectionName, id] = path.split('/');
+      await deleteDoc(doc(db, collectionName, id));
     } catch (error) {
-      console.error('Error deleting file:', error);
+      console.error('Error deleting attachment:', error);
+      // We don't necessarily want to throw here as it's a cleanup operation
     }
   },
 

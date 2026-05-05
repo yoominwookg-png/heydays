@@ -55,6 +55,7 @@
         "id": { "type": "string" },
         "title": { "type": "string" },
         "date": { "type": "string" },
+        "time": { "type": "string" },
         "location": { "type": "string" },
         "mapQuery": { "type": "string" },
         "description": { "type": "string" },
@@ -121,12 +122,29 @@
         "isRead": { "type": "boolean" }
       },
       "required": ["id", "userId", "title", "content", "type", "createdAt"]
+    },
+    "Attachment": {
+      "title": "Attachment",
+      "description": "File stored directly in Firestore",
+      "type": "object",
+      "properties": {
+        "data": { "type": "string" },
+        "contentType": { "type": "string" },
+        "size": { "type": "number" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["data", "contentType", "size", "createdAt"]
     }
   },
   "firestore": {
     "users/{userId}": {
       "schema": "User",
       "description": "User profiles"
+    },
+    "attachments/{attachmentId}": {
+      "schema": "Attachment",
+      "description": "Uploaded files (images/attachments)"
     },
     "posts/{postId}": {
       "schema": "Post",

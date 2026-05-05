@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Plus, X, Image as ImageIcon, Paperclip, Loader2, AlertCircle, FileText } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { compressImage } from '../lib/imageCompression';
+import { FirestoreImage } from './FirestoreImage';
 
 interface FileUploadZoneProps {
   files: { file?: File, url: string, status?: 'pending' | 'uploading' | 'error' }[];
@@ -19,6 +20,7 @@ export default function FileUploadZone({
   label = "파일 업로드"
 }: FileUploadZoneProps) {
   const [isProcessing, setIsProcessing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -50,7 +52,9 @@ export default function FileUploadZone({
       alert('파일 처리 중 오류가 발생했습니다.');
     } finally {
       setIsProcessing(false);
-      e.target.value = ''; // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''; // Reset input
+      }
     }
   };
 
@@ -64,6 +68,10 @@ export default function FileUploadZone({
   const getFileName = (item: { file?: File, url: string }) => {
     if (item.file) return item.file.name;
     try {
+      if (item.url.startsWith('firestore://')) {
+          const id = item.url.split('/').pop() || '';
+          return id.split('_').slice(2, -1).join('_') || '파일명 없음';
+      }
       const urlObj = new URL(item.url);
       const parts = urlObj.pathname.split('/');
       const lastPart = parts[parts.length - 1];
@@ -82,14 +90,14 @@ export default function FileUploadZone({
         {files.length < maxFiles && !isProcessing && (
           <button 
             type="button" 
-            onClick={() => document.getElementById('universal-file-input')?.click()}
+            onClick={() => fileInputRef.current?.click()}
             className="p-1 px-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-600 hover:text-white transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest"
           >
             <Plus size={12} strokeWidth={3} /> 추가하기
           </button>
         )}
         <input 
-          id="universal-file-input" 
+          ref={fileInputRef}
           type="file" 
           multiple 
           className="hidden" 
@@ -103,7 +111,7 @@ export default function FileUploadZone({
           return (
           <div key={idx} className="group relative aspect-square rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 shadow-sm transition-all hover:shadow-md flex flex-col items-center justify-center">
             {isImage ? (
-              <img src={item.url} className="w-full h-full object-cover" alt={`Preview ${idx}`} />
+              <FirestoreImage src={item.url} className="w-full h-full object-cover" alt={`Preview ${idx}`} />
             ) : (
               <div className="flex flex-col items-center justify-center p-2 text-center w-full h-full">
                 <FileText size={32} className="text-indigo-400 mb-2" />
@@ -147,15 +155,15 @@ export default function FileUploadZone({
         {files.length === 0 && !isProcessing && (
           <button 
             type="button"
-            onClick={() => document.getElementById('universal-file-input')?.click()}
+            onClick={() => fileInputRef.current?.click()}
             className="col-span-full py-12 bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[2rem] flex flex-col items-center justify-center gap-3 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-all group group-hover:border-indigo-300 dark:group-hover:border-indigo-900"
           >
             <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
               <Plus size={24} className="text-indigo-600" />
             </div>
             <div className="text-center">
-              <p className="text-sm font-black text-slate-800 dark:text-slate-200">파일 첨부하기</p>
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">최대 {maxFiles}개의 파일</p>
+              <p className="text-sm font-black text-slate-800 dark:text-slate-200">여러 개의 파일 첨부 가능</p>
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">최대 {maxFiles}개의 파일을 한 번에 선택할 수 있습니다.</p>
             </div>
           </button>
         )}

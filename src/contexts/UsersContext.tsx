@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '../types';
 import { StorageService } from '../services/storage';
+import { useAuth } from '../services/auth';
 
 interface UsersContextType {
   users: Record<string, User>;
@@ -10,9 +11,11 @@ interface UsersContextType {
 const UsersContext = createContext<UsersContextType | undefined>(undefined);
 
 export const UsersProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isLoading: authLoading } = useAuth();
   const [users, setUsers] = useState<Record<string, User>>({});
 
   const refreshUsers = async () => {
+    if (!user) return;
     try {
       const fetchedUsers = await StorageService.getUsers();
       const numUsers = fetchedUsers.reduce((acc, user) => {
@@ -26,8 +29,12 @@ export const UsersProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   useEffect(() => {
-    refreshUsers();
-  }, []);
+    if (user && !authLoading) {
+      refreshUsers();
+    } else if (!user && !authLoading) {
+      setUsers({});
+    }
+  }, [user, authLoading]);
 
   return (
     <UsersContext.Provider value={{ users, refreshUsers }}>

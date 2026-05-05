@@ -13,6 +13,7 @@ import {
   Layers, 
   Music, 
   Database,
+  Users,
   User as UserIcon,
   LogOut,
   Menu,
@@ -34,11 +35,13 @@ import { useAuth } from '../services/auth';
 import { cn, formatDate } from '../lib/utils';
 import { UserRole, Notification as AppNotification } from '../types';
 import { StorageService } from '../services/storage';
+import { AdminCrown } from './AdminCrown';
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const [showDeletionNotice, setShowDeletionNotice] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
 
   useEffect(() => {
     if (user?.deletedAt) {
@@ -137,6 +140,11 @@ export default function Layout() {
     { name: '환경 설정', path: '/settings', icon: SettingsIcon },
   ];
 
+  const extraItems = [
+    { name: '내 쪽지함', path: '/messages', icon: MessageSquare },
+    { name: 'HAYDAYS MEMBERS', path: '/members', icon: Users },
+  ];
+
   const adminItems = [
     { name: '관리자 센터', path: '/admin', icon: SettingsIcon },
     { name: '데이터 관리', path: '/admin/data', icon: Database },
@@ -170,7 +178,21 @@ export default function Layout() {
           onClick={() => navigate('/notices')}
           className="flex flex-col ml-2 mt-3 text-left"
         >
-          <span className="font-black text-lg tracking-tighter leading-none dark:text-white">HEYDAYS</span>
+          <motion.span 
+            animate={user?.role === UserRole.ADMIN ? {
+              scale: [1, 1.02, 1],
+              filter: [
+                "drop-shadow(0 0 2px #FFD700) drop-shadow(0 0 5px #FF8C00)",
+                "drop-shadow(0 0 8px #FFEF00) drop-shadow(0 0 12px #FFA500)",
+                "drop-shadow(0 0 2px #FFD700) drop-shadow(0 0 5px #FF8C00)"
+              ]
+            } : {}}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            className={cn(
+              "font-black text-lg tracking-tighter leading-none dark:text-white",
+              user?.role === UserRole.ADMIN && "text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#B38728]"
+            )}
+          >HEYDAYS</motion.span>
           <span className="text-[8px] font-bold text-blue-500 tracking-[0.2em] mt-0.5 uppercase">Community</span>
         </button>
         <div className="flex items-center gap-1 mt-1">
@@ -189,8 +211,15 @@ export default function Layout() {
             onClick={() => setIsSidebarOpen(true)}
             className="p-1 pr-3 flex items-center gap-2 group"
           >
-            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center overflow-hidden transition-all group-hover:ring-2 group-hover:ring-indigo-600/30">
-              {user?.avatar ? (
+            <div className={cn(
+              "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+              user?.role === UserRole.ADMIN 
+                ? "bg-transparent border-0 overflow-visible" 
+                : "bg-indigo-100 dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 overflow-hidden group-hover:ring-2 group-hover:ring-indigo-600/30"
+            )}>
+              {user?.role === UserRole.ADMIN ? (
+                <AdminCrown size={28} className="drop-shadow-[0_2px_2px_rgba(0,0,0,0.3)]" />
+              ) : user?.avatar ? (
                 <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
               ) : (
                 <UserIcon className="text-indigo-600 dark:text-indigo-400" size={16} />
@@ -228,30 +257,56 @@ export default function Layout() {
                 </button>
               </div>
               <div className="max-h-[400px] overflow-y-auto p-4 space-y-3 custom-scrollbar">
-                {notifications.map(n => (
-                  <div 
-                    key={n.id} 
-                    className={cn(
-                      "p-4 rounded-2xl border transition-all relative group/notif",
-                      n.isRead 
-                        ? "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 opacity-60" 
-                        : "bg-indigo-50/30 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-900 shadow-sm"
-                    )}
-                  >
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setNotifToDelete(n); }}
-                      className="absolute top-2 right-2 p-1.5 text-slate-300 hover:text-red-500 opacity-0 group-hover/notif:opacity-100 transition-all"
+                {notifications.map(n => {
+                  const isAdminNotif = n.type === 'admin';
+                  return (
+                    <div 
+                      key={n.id} 
+                      className={cn(
+                        "p-4 rounded-2xl border transition-all relative group/notif",
+                        isAdminNotif 
+                          ? "message-gold"
+                          : n.isRead 
+                            ? "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 opacity-60" 
+                            : "bg-indigo-50/30 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-900 shadow-sm"
+                      )}
                     >
-                      <Trash2 size={12} />
-                    </button>
-                    <div className="flex items-center gap-2 mb-1">
-                      {n.type === 'notice' ? <Bell size={12} className="text-indigo-600" /> : <MessageSquare size={12} className="text-indigo-600" />}
-                      <span className="text-xs font-black text-slate-800 dark:text-slate-100">{n.title}</span>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setNotifToDelete(n); }}
+                        className={cn(
+                          "absolute top-2 right-2 p-1.5 text-slate-300 hover:text-red-500 opacity-0 group-hover/notif:opacity-100 transition-all rounded-lg",
+                          isAdminNotif ? "bg-amber-100/50 dark:bg-amber-900/30" : ""
+                        )}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                      <div className="flex items-center gap-2 mb-1">
+                        {n.type === 'notice' ? (
+                          <Bell size={12} className="text-indigo-600" />
+                        ) : isAdminNotif ? (
+                          <AdminCrown size={12} className="text-amber-600" />
+                        ) : (
+                          <MessageSquare size={12} className="text-indigo-600" />
+                        )}
+                        <span className={cn(
+                          "text-xs font-black",
+                          isAdminNotif ? "sender-name" : "text-slate-800 dark:text-slate-100"
+                        )}>
+                          {n.title}
+                          {isAdminNotif && <span className="ml-1.5 sender-tag">ADMIN</span>}
+                        </span>
+                      </div>
+                      <p className={cn(
+                        "text-xs font-medium leading-relaxed",
+                        isAdminNotif ? "message-content" : "text-slate-500 dark:text-slate-400"
+                      )}>{n.content}</p>
+                      <p className={cn(
+                        "text-[9px] font-bold mt-2",
+                        isAdminNotif ? "text-amber-600/60" : "text-slate-400"
+                      )}>{formatDate(n.createdAt)}</p>
                     </div>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 leading-relaxed">{n.content}</p>
-                    <p className="text-[9px] font-bold text-slate-400 mt-2">{formatDate(n.createdAt)}</p>
-                  </div>
-                ))}
+                  );
+                })}
                 {notifications.length === 0 && (
                   <div className="py-12 text-center">
                     <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300 dark:text-slate-600">
@@ -329,7 +384,21 @@ export default function Layout() {
               onClick={() => { navigate('/notices'); setIsSidebarOpen(false); }}
               className="flex flex-col text-left"
             >
-              <span className="font-black text-2xl tracking-tighter leading-none dark:text-white">HEYDAYS</span>
+              <motion.span 
+                animate={user?.role === UserRole.ADMIN ? {
+                  scale: [1, 1.02, 1],
+                  filter: [
+                    "drop-shadow(0 0 2px #FFD700) drop-shadow(0 0 5px #FF8C00)",
+                    "drop-shadow(0 0 8px #FFEF00) drop-shadow(0 0 12px #FFA500)",
+                    "drop-shadow(0 0 2px #FFD700) drop-shadow(0 0 5px #FF8C00)"
+                  ]
+                } : {}}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                className={cn(
+                  "font-black text-2xl tracking-tighter leading-none dark:text-white",
+                  user?.role === UserRole.ADMIN && "text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#B38728]"
+                )}
+              >HEYDAYS</motion.span>
               <span className="text-[10px] font-bold text-blue-500 tracking-widest mt-1 uppercase">Community</span>
             </button>
             <button 
@@ -343,23 +412,27 @@ export default function Layout() {
           {/* User Profile - Compact horizontal layout */}
           <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
             <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 overflow-hidden flex items-center justify-center flex-shrink-0">
-                {user?.avatar ? (
+              <div 
+                className={cn(
+                  "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
+                  user?.role === UserRole.ADMIN 
+                    ? "bg-transparent border-0 overflow-visible"
+                    : "bg-indigo-100 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 overflow-hidden"
+              )}>
+                {user?.role === UserRole.ADMIN ? (
+                  <AdminCrown size={24} />
+                ) : user?.avatar ? (
                   <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
                 ) : (
-                  user?.role === UserRole.ADMIN ? (
-                    <Crown className="text-indigo-600 dark:text-indigo-400 fill-indigo-600/10" size={18} />
-                  ) : (
-                    <UserIcon className="text-indigo-600 dark:text-indigo-400" size={18} />
-                  )
+                  <UserIcon className="text-indigo-600 dark:text-indigo-400" size={18} />
                 )}
               </div>
               
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-sm truncate dark:text-white flex items-center gap-1">
+                <div className="font-bold text-sm truncate dark:text-white flex items-center gap-1">
                   {user?.name}
-                  {user?.role === UserRole.ADMIN && <Crown size={12} className="text-indigo-600 dark:text-indigo-400 fill-indigo-600/20" />}
-                </p>
+                  {user?.role === UserRole.ADMIN && <AdminCrown size={12} />}
+                </div>
                 <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                   HEYDAYS MEMBER
                 </p>
@@ -377,9 +450,21 @@ export default function Layout() {
 
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar">
-            <div className="mb-8">
+            <div className="mb-4">
               <p className="px-4 mb-2 text-[11px] font-bold text-slate-400 tracking-[0.2em] uppercase">메인 메뉴</p>
               {navItems.map(item => (
+                <div key={item.path}>
+                  <NavItem item={item} />
+                </div>
+              ))}
+            </div>
+
+            <div className="px-4 py-2">
+              <div className="h-px bg-slate-100 dark:bg-slate-800 w-full mb-4" />
+            </div>
+
+            <div className="mb-8">
+              {extraItems.map(item => (
                 <div key={item.path}>
                   <NavItem item={item} />
                 </div>

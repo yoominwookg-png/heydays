@@ -24,15 +24,23 @@ export default function Signup() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { signupWithId } = useAuth();
+  const [loadingMessage, setLoadingMessage] = useState('');
+  const { signupWithId, user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    if (user && !authLoading) {
+      navigate('/notices', { replace: true });
+    }
+  }, [user, authLoading, navigate]);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setIsLoading(true);
+      setLoadingMessage('이미지 압축 중...');
       try {
-        const compressedFile = await compressImage(file);
+        const compressedFile = await compressImage(file, { maxWidthOrHeight: 400, maxSizeMB: 0.1, quality: 0.6 });
         setAvatarFile(compressedFile);
         const previewUrl = URL.createObjectURL(compressedFile);
         setAvatar(previewUrl);
@@ -40,6 +48,7 @@ export default function Signup() {
         console.error('Avatar compression failed:', err);
       } finally {
         setIsLoading(false);
+        setLoadingMessage('');
       }
     }
   };
@@ -47,6 +56,7 @@ export default function Signup() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setLoadingMessage('가입 처리 중...');
     setError('');
 
     if (formData.password !== formData.confirmPassword) {
@@ -56,7 +66,10 @@ export default function Signup() {
     }
 
     try {
-      await signupWithId(formData.id, formData.password, formData.name, formData.bio, avatarFile || avatar);
+      // 사진이나 자기소개가 없어도 가입 가능하도록 처리
+      // avatarFile이 있으면 파일을 보내고, 없으면 undefined를 보냄 (blob: URL 등은 무시)
+      const avatarData = avatarFile || undefined;
+      await signupWithId(formData.id, formData.password, formData.name, formData.bio, avatarData);
       navigate('/notices');
     } catch (err: any) {
       console.error('Signup error:', err);
@@ -145,9 +158,8 @@ export default function Signup() {
                 type="text"
                 value={formData.bio}
                 onChange={(e) => setFormData({...formData, bio: e.target.value})}
-                className="w-full bg-white/10 border border-white/20 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-yellow-300/50 transition-all placeholder:text-white/30 text-sm whitespace-nowrap overflow-hidden text-ellipsis"
-                placeholder="자기소개 (줄바꿈 없이 입력)"
-                required
+                className="w-full bg-white/10 border border-white/20 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-yellow-300/50 transition-all placeholder:text-white/40 text-sm whitespace-nowrap overflow-hidden text-ellipsis"
+                placeholder="자기소개 (선택사항, 줄바꿈 없이)"
               />
             </div>
 
@@ -185,7 +197,7 @@ export default function Signup() {
                 isLoading && "opacity-80 cursor-not-allowed"
               )}
             >
-              {isLoading ? "처리 중..." : "가입하기"}
+              {isLoading ? (loadingMessage || "처리 중...") : "가입하기"}
             </button>
           </form>
         </div>

@@ -53,6 +53,7 @@ export interface Schedule {
   id: string;
   title: string;
   date: string;
+  time?: string;
   location: string;
   mapQuery?: string;
   description: string;
@@ -75,6 +76,7 @@ export interface Score {
   views?: number;
   commentCount?: number;
   authorId: string;
+  authorName: string;
   createdAt: number;
 }
 

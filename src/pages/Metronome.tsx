@@ -10,7 +10,6 @@ import {
   Square, 
   Plus, 
   Minus, 
-  Smartphone, 
   Volume2, 
   Hand,
   Settings2
@@ -23,7 +22,6 @@ export default function Metronome() {
   const [bpm, setBpm] = useState(120);
   const [isPlaying, setIsPlaying] = useState(false);
   const [sound, setSound] = useState<SoundType>('wood');
-  const [vibration, setVibration] = useState(true);
   const [beat, setBeat] = useState(0);
   const [lastTaps, setLastTaps] = useState<number[]>([]);
 
@@ -37,7 +35,7 @@ export default function Metronome() {
     };
   }, []);
 
-  const playClick = useCallback(() => {
+  const playClick = useCallback((currentBeat: number) => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
@@ -49,7 +47,7 @@ export default function Metronome() {
       ctx.resume();
     }
 
-    const isFirstBeat = beat === 0;
+    const isFirstBeat = currentBeat === 0;
 
     const playKick = (time: number) => {
       // Body oscillator
@@ -117,13 +115,13 @@ export default function Metronome() {
     };
 
     if (sound === 'drum') {
-      if (beat === 0) {
+      if (currentBeat === 0) {
         playKick(ctx.currentTime);
       } else {
         playHiHat(ctx.currentTime);
         playKick(ctx.currentTime);
       }
-      if (beat === 2) {
+      if (currentBeat === 2) {
         playSnare(ctx.currentTime);
       }
     } else {
@@ -145,11 +143,7 @@ export default function Metronome() {
       osc.start();
       osc.stop(ctx.currentTime + 0.1);
     }
-
-    if (vibration && navigator.vibrate) {
-      navigator.vibrate(isFirstBeat ? 40 : 20);
-    }
-  }, [beat, sound, vibration]);
+  }, [sound]);
 
   const toggleMetronome = () => {
     if (isPlaying) {
@@ -167,7 +161,7 @@ export default function Metronome() {
 
   useEffect(() => {
     if (isPlaying) {
-      playClick();
+      playClick(beat);
     }
   }, [beat, isPlaying, playClick]);
 
@@ -201,19 +195,19 @@ export default function Metronome() {
   };
 
   return (
-    <div className="h-full flex flex-col animate-in fade-in zoom-in duration-700 overflow-hidden">
-      {/* Header Area */}
-      <div className="flex-shrink-0 flex items-center justify-between mb-4 md:mb-6">
+    <div className="h-full flex flex-col animate-in fade-in zoom-in duration-700 overflow-hidden p-2">
+      {/* Header Area - Compact */}
+      <div className="flex-shrink-0 flex items-center justify-between mb-2">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black tracking-tighter dark:text-white uppercase leading-none">HEYDAYS METRONOME</h1>
-          <p className="text-slate-500 dark:text-slate-400 font-bold text-[8px] md:text-[10px] uppercase tracking-[0.4em] mt-1">MASTER YOUR RHYTHM</p>
+          <h1 className="text-xl md:text-2xl font-black tracking-tighter dark:text-white uppercase leading-none">HEYDAYS METRONOME</h1>
+          <p className="text-slate-500 dark:text-slate-400 font-bold text-[7px] md:text-[9px] uppercase tracking-[0.4em] mt-1">MASTER YOUR RHYTHM</p>
         </div>
       </div>
 
       <div className="flex-1 min-h-0">
         <div 
           className={cn(
-            "h-full w-full bg-slate-950 rounded-[2.5rem] md:rounded-[3.5rem] p-6 md:p-10 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] relative overflow-hidden flex flex-col items-center justify-between transition-all duration-500",
+            "h-full w-full bg-slate-950 rounded-[2rem] md:rounded-[3.5rem] p-4 md:p-8 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] relative overflow-hidden flex flex-col items-center justify-between transition-all duration-500",
             isPlaying ? "ring-4 md:ring-8 ring-indigo-500/20" : "hover:ring-4 md:hover:ring-8 hover:ring-white/5"
           )}
         >
@@ -233,8 +227,8 @@ export default function Metronome() {
             )}
           </AnimatePresence>
 
-          {/* Top Panel: Sound Selection & Haptic */}
-          <div className="relative z-20 w-full flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-white/5 bg-slate-950/40 backdrop-blur-sm rounded-t-3xl">
+          {/* Top Panel: Sound Selection - Reduced padding */}
+          <div className="relative z-20 w-full flex items-center justify-center gap-4 pb-3 border-b border-white/5 bg-slate-950/40 backdrop-blur-sm rounded-t-3xl text-center flex-shrink-0">
             <div className="flex gap-2">
               {[
                 { key: 'wood', label: 'WOOD' },
@@ -244,7 +238,7 @@ export default function Metronome() {
                   key={s.key}
                   onClick={(e) => { e.stopPropagation(); setSound(s.key as SoundType); }}
                   className={cn(
-                    "px-4 md:px-5 py-2 md:py-2.5 rounded-xl border-2 font-black uppercase text-[10px] md:text-[11px] tracking-widest transition-all",
+                    "px-4 md:px-5 py-1.5 md:py-2 rounded-xl border-2 font-black uppercase text-[10px] md:text-[11px] tracking-widest transition-all",
                     sound === s.key 
                       ? "border-indigo-500 bg-indigo-500 text-white" 
                       : "border-white/10 text-slate-500 hover:border-white/20 hover:text-slate-300"
@@ -254,97 +248,88 @@ export default function Metronome() {
                 </button>
               ))}
             </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 text-slate-500">
-                <Smartphone size={14} />
-                <span className="text-[9px] font-black uppercase tracking-widest">HAPTIC FEEDBACK</span>
-              </div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setVibration(!vibration); }}
-                className={cn(
-                  "w-10 h-6 rounded-full transition-colors relative",
-                  vibration ? "bg-indigo-600" : "bg-slate-800"
-                )}
-              >
-                <motion.div 
-                  animate={{ x: vibration ? 16 : 0 }}
-                  className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
-                />
-              </button>
-            </div>
           </div>
 
-          {/* Main Interactive Circle */}
+          {/* Main Interactive Scaling Area */}
           <div 
             onClick={toggleMetronome}
-            className="flex-1 flex flex-col items-center justify-center w-full cursor-pointer min-h-0 py-4"
+            className="flex-1 flex flex-col items-center justify-center w-full cursor-pointer min-h-0 py-2 sm:py-4 overflow-hidden"
           >
-            <motion.div 
-              animate={isPlaying ? {
-                scale: beat === 0 ? [1, 1.08, 1] : [1, 1.03, 1],
-              } : {}}
-              transition={{ duration: 0.1 }}
-              className={cn(
-                "w-48 h-48 sm:w-64 sm:h-64 md:w-80 md:h-80 rounded-full border-8 md:border-[16px] flex flex-col items-center justify-center transition-all duration-100 relative group",
-                isPlaying 
-                  ? (beat === 0 ? "border-yellow-400 shadow-[0_0_80px_rgba(250,204,21,0.4)]" : "border-indigo-500 shadow-[0_0_40px_rgba(99,102,241,0.2)]") 
-                  : "border-slate-900"
-              )}
-            >
-              <div className="text-center z-10">
-                <span className="text-6xl md:text-8xl lg:text-[7rem] font-black text-white tracking-tighter tabular-nums leading-none block">{bpm}</span>
-                <p className="text-slate-500 font-black tracking-[0.3em] text-[9px] md:text-xs uppercase mt-1">BPM</p>
-              </div>
-              
-              <div className="absolute bottom-10 md:bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2">
-                {isPlaying ? (
-                  <Square size={20} className="fill-red-500 text-red-500" />
-                ) : (
-                  <Play size={24} className="fill-white text-white ml-1" />
+            <div className="relative flex-1 flex items-center justify-center w-full max-h-full aspect-square p-2">
+              <motion.div 
+                animate={isPlaying ? {
+                  scale: beat === 0 ? [1, 1.05, 1] : [1, 1.02, 1],
+                } : {}}
+                transition={{ duration: 0.1 }}
+                className={cn(
+                  "h-full aspect-square max-w-full rounded-full border-[6px] md:border-[16px] flex flex-col items-center justify-center transition-all duration-100 relative group",
+                  isPlaying 
+                    ? (beat === 0 ? "border-yellow-400 shadow-[0_0_80px_rgba(250,204,21,0.4)]" : "border-indigo-500 shadow-[0_0_40px_rgba(99,102,241,0.2)]") 
+                    : "border-slate-900"
                 )}
-              </div>
-            </motion.div>
-
-            {/* Beat Indicators & Quick Adjust */}
-            <div className="flex items-center gap-6 sm:gap-10 mt-6 md:mt-10">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setBpm(b => Math.max(40, b - 1)); }}
-                className="w-12 h-12 md:w-16 md:h-16 bg-slate-900 rounded-2xl hover:bg-slate-800 active:scale-90 transition-all flex items-center justify-center text-slate-400 border border-white/5 shadow-lg group"
               >
-                <Minus size={20} md:size={24} strokeWidth={3} className="group-hover:text-white transition-colors" />
+                <div className="text-center z-10">
+                  <span className="text-5xl md:text-8xl lg:text-[7rem] font-black text-white tracking-tighter tabular-nums leading-none block">{bpm}</span>
+                  <p className="text-slate-500 font-black tracking-[0.3em] text-[8px] md:text-xs uppercase mt-1">BPM</p>
+                </div>
+                
+                <div className="absolute bottom-[15%] left-1/2 -translate-x-1/2 flex items-center gap-2">
+                  {isPlaying ? (
+                    <Square size={16} md:size={20} className="fill-red-500 text-red-500" />
+                  ) : (
+                    <Play size={20} md:size={24} className="fill-white text-white ml-1" />
+                  )}
+                </div>
+              </motion.div>
+            </div>
+
+            {/* Beat Indicators & Quick Adjust - Reduced gaps and margins */}
+            <div className="flex items-center gap-4 sm:gap-10 mt-4 md:mt-8 flex-shrink-0">
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  const nextBpm = Math.max(40, bpm - 1);
+                  setBpm(nextBpm);
+                }}
+                className="w-10 h-10 md:w-16 md:h-16 bg-slate-900 rounded-2xl hover:bg-slate-800 active:scale-90 transition-all flex items-center justify-center text-slate-400 border border-white/5 shadow-lg group"
+              >
+                <Minus size={18} md:size={24} strokeWidth={3} className="group-hover:text-white transition-colors" />
               </button>
 
-              <div className="flex gap-4 md:gap-8">
+              <div className="flex gap-3 md:gap-8">
                 {[0, 1, 2, 3].map((b) => (
                   <motion.div
                     key={b}
-                    animate={isPlaying && beat === b ? { scale: 1.8, opacity: 1 } : { scale: 1, opacity: 0.15 }}
+                    animate={isPlaying && beat === b ? { scale: 1.5, opacity: 1 } : { scale: 1, opacity: 0.15 }}
                     className={cn(
-                      "w-3 h-3 md:w-5 md:h-5 rounded-full transition-shadow duration-300",
-                      b === 0 ? "bg-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)]" : "bg-white shadow-[0_0_10px_rgba(255,255,255,0.3)]"
+                      "w-2.5 h-2.5 md:w-5 md:h-5 rounded-full transition-shadow duration-300",
+                      b === 0 ? "bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.5)]" : "bg-white shadow-[0_0_10px_rgba(255,255,255,0.3)]"
                     )}
                   />
                 ))}
               </div>
 
               <button 
-                onClick={(e) => { e.stopPropagation(); setBpm(b => Math.min(240, b + 1)); }}
-                className="w-12 h-12 md:w-16 md:h-16 bg-slate-900 rounded-2xl hover:bg-slate-800 active:scale-90 transition-all flex items-center justify-center text-slate-400 border border-white/5 shadow-lg group"
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  const nextBpm = Math.min(240, bpm + 1);
+                  setBpm(nextBpm);
+                }}
+                className="w-10 h-10 md:w-16 md:h-16 bg-slate-900 rounded-2xl hover:bg-slate-800 active:scale-90 transition-all flex items-center justify-center text-slate-400 border border-white/5 shadow-lg group"
               >
-                <Plus size={20} md:size={24} strokeWidth={3} className="group-hover:text-white transition-colors" />
+                <Plus size={18} md:size={24} strokeWidth={3} className="group-hover:text-white transition-colors" />
               </button>
             </div>
             
-            <div className="mt-8 text-slate-800 font-black tracking-[0.3em] text-[10px] md:text-xs uppercase pointer-events-none">
+            <div className="mt-4 text-slate-800 font-black tracking-[0.3em] text-[8px] md:text-xs uppercase pointer-events-none flex-shrink-0">
               TAP CENTER TO {isPlaying ? 'STOP' : 'START'}
             </div>
           </div>
 
-          {/* Bottom Panel: Tempo Adjustment */}
-          <div className="relative z-20 w-full max-w-5xl flex flex-col gap-6 pt-8 border-t border-white/5 bg-slate-950/40 backdrop-blur-sm rounded-b-3xl">
-            <div className="flex flex-col md:flex-row items-center gap-8 md:gap-12">
-              <div className="flex-1 w-full flex flex-col gap-4">
+          {/* Bottom Panel: Tempo Adjustment - Reduced padding and gaps */}
+          <div className="relative z-20 w-full max-w-5xl flex flex-col gap-3 pt-6 border-t border-white/5 bg-slate-950/40 backdrop-blur-sm rounded-b-3xl flex-shrink-0">
+            <div className="flex flex-col md:flex-row items-center gap-4 md:gap-12">
+              <div className="flex-1 w-full flex flex-col gap-2">
                 <input 
                   type="range" 
                   min="40" 
@@ -352,9 +337,9 @@ export default function Metronome() {
                   value={bpm} 
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) => setBpm(parseInt(e.target.value))}
-                  className="w-full accent-indigo-500 h-2 bg-slate-900 rounded-full appearance-none cursor-pointer"
+                  className="w-full accent-indigo-500 h-1.5 md:h-2 bg-slate-900 rounded-full appearance-none cursor-pointer"
                 />
-                <div className="flex justify-between w-full text-[9px] md:text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">
+                <div className="flex justify-between w-full text-[8px] md:text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">
                   <span>Adagio</span>
                   <span className="hidden sm:inline">Andante</span>
                   <span>Moderato</span>
@@ -364,10 +349,12 @@ export default function Metronome() {
               </div>
 
               <button 
-                onClick={handleTap}
-                className="w-full md:w-auto px-10 py-5 md:py-6 bg-indigo-600 text-white rounded-2xl font-black flex items-center justify-center gap-4 hover:bg-blue-600 active:scale-95 transition-all text-xs md:text-sm tracking-[0.2em]"
+                onClick={(e) => {
+                  handleTap(e);
+                }}
+                className="w-full md:w-auto px-8 py-4 md:py-6 bg-indigo-600 text-white rounded-2xl font-black flex items-center justify-center gap-4 hover:bg-blue-600 active:scale-95 transition-all text-[10px] md:text-sm tracking-[0.2em]"
               >
-                <Hand size={20} />
+                <Hand size={18} />
                 TAP TEMPO
               </button>
             </div>

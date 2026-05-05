@@ -33,6 +33,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import FileUploadZone from '../components/FileUploadZone';
 import UserBioModal from '../components/UserBioModal';
 import { UserAvatarDisplay } from '../components/UserAvatarDisplay';
+import { FirestoreImage } from '../components/FirestoreImage';
+import { FirestoreFileLink } from '../components/FirestoreFileLink';
+import ImageGallery from '../components/ImageGallery';
+import { AdminCrown } from '../components/AdminCrown';
 
 export default function Schedules() {
   const { user } = useAuth();
@@ -43,10 +47,12 @@ export default function Schedules() {
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [viewingBioUser, setViewingBioUser] = useState<User | null>(null);
   const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(null);
+  const [galleryState, setGalleryState] = useState<{ images: string[], index: number } | null>(null);
   
   // New schedule form state
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
   const [mapQuery, setMapQuery] = useState('');
   const [description, setDescription] = useState('');
@@ -104,6 +110,7 @@ export default function Schedules() {
       const scheduleData: Partial<Schedule> = {
         title: title.trim(),
         date,
+        time,
         location: location.trim(),
         mapQuery: mapQuery.trim() || location.trim(),
         description: description.trim(),
@@ -160,6 +167,7 @@ export default function Schedules() {
     setEditingSchedule(schedule);
     setTitle(schedule.title);
     setDate(schedule.date);
+    setTime(schedule.time || '');
     setLocation(schedule.location);
     setMapQuery(schedule.mapQuery || '');
     setDescription(schedule.description);
@@ -236,11 +244,15 @@ export default function Schedules() {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   const isImageFile = (url: string) => {
-    return url.match(/\.(jpeg|jpg|gif|png|webp|bmp|svg)(?:\?|%3F|$)/i) !== null;
+    return url.match(/\.(jpeg|jpg|gif|png|webp)(?:_|\?|%3F|$)/i) !== null;
   };
 
   const getFileName = (url: string) => {
     try {
+      if (url.startsWith('firestore://')) {
+        const id = url.split('/').pop() || '';
+        return id.split('_').slice(2, -1).join('_') || '파일명 없음';
+      }
       const urlObj = new URL(url);
       const parts = urlObj.pathname.split('/');
       const lastPart = parts[parts.length - 1];
@@ -250,27 +262,53 @@ export default function Schedules() {
     }
   };
 
-  const renderLargeFileAttachment = (fileUrl: string, idx: number) => {
+  const renderLargeFileAttachment = (fileUrl: string, idx: number, allFiles: string[]) => {
     if (isImageFile(fileUrl)) {
-      return <img src={fileUrl} alt={`Attachment ${idx + 1}`} className="w-full h-auto object-contain max-h-[800px] rounded-[2rem] bg-slate-100/50 dark:bg-slate-900/50" />;
+      const imageFiles = allFiles.filter(f => isImageFile(f));
+      const imageIndex = imageFiles.indexOf(fileUrl);
+      
+      return (
+        <div key={idx} className="flex flex-col items-start gap-4 py-2 w-full">
+          <div 
+            className="cursor-zoom-in w-full max-w-sm overflow-hidden rounded-2xl shadow-md hover:shadow-lg transition-all border border-slate-200 dark:border-slate-700"
+            onClick={() => setGalleryState({ images: imageFiles, index: imageIndex >= 0 ? imageIndex : 0 })}
+          >
+            <FirestoreImage 
+              src={fileUrl} 
+              alt={`Attachment ${idx + 1}`} 
+              className="w-full h-auto object-cover aspect-video hover:scale-105 transition-transform duration-500" 
+            />
+          </div>
+          <FirestoreFileLink 
+            url={fileUrl} 
+            filename={getFileName(fileUrl)}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-slate-600 dark:text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+          >
+            <Download size={14} />
+            <span>이미지 원본 다운로드</span>
+          </FirestoreFileLink>
+        </div>
+      );
     }
+
     return (
-      <a 
-        href={fileUrl} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="flex items-center gap-4 p-6 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-[2rem] transition-colors group"
-      >
-        <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">
-          <FileText size={32} />
+      <div key={idx} className="flex items-center gap-4 px-6 py-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/80 rounded-[2rem] transition-all group w-full">
+        <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform flex-shrink-0">
+          <FileText size={28} />
         </div>
         <div className="flex-1 overflow-hidden">
-          <p className="text-base font-black text-slate-800 dark:text-slate-200 truncate">{getFileName(fileUrl)}</p>
-          <p className="text-sm text-indigo-600 dark:text-indigo-400 font-bold mt-1 inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-full">
-            <Download size={14} /> 파일 다운로드
+          <p className="text-base font-black text-slate-800 dark:text-slate-200 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+            {getFileName(fileUrl)}
           </p>
+          <FirestoreFileLink 
+            url={fileUrl} 
+            filename={getFileName(fileUrl)}
+            className="text-sm font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 hover:text-indigo-600 dark:hover:text-indigo-400"
+          >
+            <Download size={14} /> 파일 다운로드
+          </FirestoreFileLink>
         </div>
-      </a>
+      </div>
     );
   };
 
@@ -291,6 +329,7 @@ export default function Schedules() {
               setEditingSchedule(null);
               setTitle('');
               setDate('');
+              setTime('');
               setLocation('');
               setMapQuery('');
               setDescription('');
@@ -340,6 +379,7 @@ export default function Schedules() {
               const isSunday = i % 7 === 0;
               const isSaturday = i % 7 === 6;
               const isHoliday = day ? isPublicHoliday(day, month) : false;
+              const hasPerformanceInFuture = day && hasPerformance;
 
               return (
                 <div key={i} className="flex flex-col items-center justify-center relative min-h-[40px] md:min-h-[60px]">
@@ -350,19 +390,23 @@ export default function Schedules() {
                     >
                       <div className={cn(
                         "w-7 h-7 md:w-10 md:h-10 flex items-center justify-center rounded-lg md:rounded-xl text-xs md:text-base font-black transition-all relative z-10",
-                        isSelected ? "bg-indigo-600 text-white" : (isToday ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"),
+                        isSelected ? "bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.5)] scale-110" : (isToday ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"),
                         !isSelected && (isSunday || isHoliday) && "text-red-500",
-                        !isSelected && isSaturday && !isToday && !isHoliday && "text-blue-500"
+                        !isSelected && isSaturday && !isToday && !isHoliday && "text-blue-500",
+                        !isSelected && hasPerformance && "ring-2 ring-indigo-500/20 bg-indigo-50/50 dark:bg-indigo-900/10"
                       )}>
                         <span>{day}</span>
                         {hasPerformance && (
                           <div className={cn(
-                            "absolute bottom-[-3px] md:bottom-[-6px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-red-500",
+                            "absolute bottom-[2px] md:bottom-[4px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-indigo-500 animate-pulse",
                             isSelected && "bg-white"
                           )} />
                         )}
                         {isSelected && !hasPerformance && (
-                          <motion.div layoutId="selection" className="absolute inset-0 border-2 border-indigo-600 rounded-lg md:rounded-xl" />
+                          <motion.div layoutId="selection" className="absolute inset-0 border-2 border-indigo-600 rounded-lg md:rounded-xl shadow-[0_0_15px_rgba(79,70,229,0.3)]" />
+                        )}
+                        {hasPerformance && !isSelected && (
+                          <div className="absolute inset-0 bg-indigo-400/10 rounded-lg md:rounded-xl blur-sm -z-10" />
                         )}
                       </div>
                     </button>
@@ -388,42 +432,42 @@ export default function Schedules() {
                   animate={{ opacity: 1, x: 0 }}
                   onClick={() => setSelectedDay(eventDay)}
                   className={cn(
-                    "bg-white dark:bg-slate-900 p-4 rounded-[1.5rem] border transition-all flex items-center gap-4 group relative cursor-pointer",
+                    "px-4 py-3 rounded-2xl border transition-all flex items-center gap-4 group relative cursor-pointer overflow-hidden",
                     isSelected 
-                      ? "border-indigo-600 ring-2 ring-indigo-600/5 shadow-md scale-[1.01]" 
-                      : "border-slate-100 dark:border-white/5 hover:border-slate-200 dark:hover:border-white/10"
+                      ? "bg-white dark:bg-slate-900 border-indigo-600 ring-2 ring-indigo-600/5 shadow-xl scale-[1.02]" 
+                      : "bg-white/40 dark:bg-slate-900/40 backdrop-blur-md border-slate-100 dark:border-white/5 hover:border-indigo-500/50 hover:bg-white/60 dark:hover:bg-slate-900/60"
                   )}
                 >
+                  {isSelected && (
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-[40px] -z-10 rounded-full" />
+                  )}
+                  
                   <div className={cn(
-                    "w-12 h-12 rounded-xl flex flex-col items-center justify-center flex-shrink-0 transition-colors",
-                    isSelected ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500"
+                    "w-12 h-12 rounded-xl flex flex-col items-center justify-center flex-shrink-0 transition-all duration-300",
+                    isSelected ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 rotate-3" : "bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/30 group-hover:text-indigo-600"
                   )}>
                     <span className="text-xl font-black leading-none">{eventDay}</span>
                   </div>
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded text-[8px] font-black uppercase tracking-widest flex-shrink-0">공연</span>
+                      <span className="px-1 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded text-[7px] font-black uppercase tracking-widest flex-shrink-0">공연</span>
                       <h4 
                         onClick={(e) => { e.stopPropagation(); setSelectedSchedule(s); }}
-                        className="text-sm md:text-base font-black text-slate-900 dark:text-white truncate hover:text-indigo-600 transition-colors uppercase tracking-tight"
+                        className="text-sm font-black text-slate-900 dark:text-white truncate hover:text-indigo-600 transition-colors uppercase tracking-tight"
                       >
                         {s.title}
                       </h4>
                     </div>
                     
                     <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500">
-                      <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold">
-                        <MapPin size={12} className="text-indigo-500" />
+                      <div className="flex items-center gap-1 text-[9px] font-bold">
+                        <MapPin size={10} className="text-indigo-500" />
                         <span className="truncate">{s.location}</span>
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold">
-                        <Clock size={12} className="text-indigo-500" />
-                        <span>19:00</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-[10px] md:text-xs font-bold font-mono">
-                        <MessageCircle size={12} className="text-slate-300 dark:text-slate-600" />
-                        <span>{s.commentCount || 0}</span>
+                      <div className="flex items-center gap-1 text-[9px] font-bold">
+                        <Clock size={10} className="text-indigo-500" />
+                        <span>{s.time || '시간 미지정'}</span>
                       </div>
                     </div>
                   </div>
@@ -484,15 +528,25 @@ export default function Schedules() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">장소</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">시간</label>
                     <input 
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
+                      type="time"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-bold dark:text-white"
-                      placeholder="공연 장소"
-                      required
                     />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">장소</label>
+                  <input 
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-bold dark:text-white"
+                    placeholder="공연 장소"
+                    required
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -527,7 +581,13 @@ export default function Schedules() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {selectedSchedule && (
+        {selectedSchedule && (() => {
+          const allScheduleFiles = selectedSchedule.files || [];
+          const allImageFiles = allScheduleFiles.filter(isImageFile);
+          const featuredImage = allImageFiles.length > 0 ? allImageFiles[0] : null;
+          const remainingFiles = allScheduleFiles.filter(f => f !== featuredImage);
+
+          return (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -538,73 +598,76 @@ export default function Schedules() {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/5 overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/5 overflow-hidden flex flex-col max-h-[90vh]"
             >
-              {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-slate-50 dark:border-white/5 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-10">
+              {/* Navigation & Metadata Header */}
+              <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
+                    <CalendarIcon size={20} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] leading-none mb-1">Performance</p>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-tight leading-none">Detail Schedule</p>
+                  </div>
+                </div>
                 <div className="flex items-center gap-4">
-                  <button onClick={() => setSelectedSchedule(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500">
+                  <button onClick={() => setSelectedSchedule(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-400">
                     <X size={24} />
                   </button>
-                  <h2 className="text-xl font-black tracking-tight dark:text-white uppercase truncate max-w-[200px] md:max-w-md">공연 일정</h2>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-widest">
-                    <Clock size={12} />
-                    {new Date(selectedSchedule.createdAt).toLocaleDateString()}
-                  </div>
                 </div>
               </div>
 
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto p-8 md:p-12 custom-scrollbar">
-                <div className="space-y-10">
-                  <div className="space-y-4">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">
-                      <Music size={12} strokeWidth={3} />
-                      {selectedSchedule.date}
-                    </div>
-                    <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase">
+              {/* Content Container */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="p-8 md:p-10 space-y-8">
+                  {/* Title Section */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">공연 제목</label>
+                    <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase">
                       {selectedSchedule.title}
                     </h1>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-white/5 space-y-1">
-                      <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">장소</span>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-white font-black text-lg">
-                        <MapPin size={20} className="text-indigo-600 dark:text-indigo-400" />
-                        {selectedSchedule.location}
+                  {/* Date, Time & Location Section */}
+                  <div className="flex flex-wrap gap-3">
+                    <div className="bg-white/40 dark:bg-white/5 backdrop-blur-md px-5 py-3 rounded-2xl border border-slate-100 dark:border-white/5 flex items-center gap-3 shadow-sm group hover:border-indigo-500/30 transition-all">
+                      <div className="w-8 h-8 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
+                        <CalendarIcon size={18} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight">일시</span>
+                        <div className="flex items-center gap-2 text-slate-900 dark:text-white font-black text-base leading-tight">
+                          <span>{selectedSchedule.date}</span>
+                          {selectedSchedule.time && (
+                            <>
+                              <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                              <span className="text-indigo-600 dark:text-indigo-400">{selectedSchedule.time}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-white/5 space-y-1">
-                      <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">공연 시간</span>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-white font-black text-lg">
-                        <Clock size={20} className="text-indigo-600 dark:text-indigo-400" />
-                        상세내용 참고
+
+                    <div className="bg-white/40 dark:bg-white/5 backdrop-blur-md px-5 py-3 rounded-2xl border border-slate-100 dark:border-white/5 flex items-center gap-3 shadow-sm group hover:border-indigo-500/30 transition-all">
+                      <div className="w-8 h-8 rounded-full bg-pink-50 dark:bg-pink-900/30 flex items-center justify-center text-pink-500 group-hover:scale-110 transition-transform">
+                        <MapPin size={18} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight">장소</span>
+                        <span className="text-slate-900 dark:text-white font-black text-base leading-tight">
+                          {selectedSchedule.location}
+                        </span>
                       </div>
                     </div>
                   </div>
 
+                  {/* Description Section */}
                   {selectedSchedule.description && (
-                    <div className="space-y-4">
-                      <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest border-l-4 border-indigo-600 pl-3">상세 설명</h3>
-                      <div className="text-slate-600 dark:text-slate-300 leading-relaxed font-medium whitespace-pre-wrap translate-y-0 text-base">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">상세 설명</label>
+                      <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-base bg-slate-50/50 dark:bg-slate-800/20 p-6 rounded-[2rem] border border-slate-100 dark:border-white/5">
                         {selectedSchedule.description}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedSchedule.files && selectedSchedule.files.length > 0 && (
-                    <div className="space-y-6">
-                      <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest border-l-4 border-indigo-600 pl-3">첨부 파일</h3>
-                      <div className="grid grid-cols-1 gap-6">
-                        {selectedSchedule.files.map((file, idx) => (
-                          <div key={idx} className="rounded-3xl overflow-hidden border border-slate-100 dark:border-white/5 shadow-xl bg-slate-50 dark:bg-slate-800">
-                            {renderLargeFileAttachment(file, idx)}
-                          </div>
-                        ))}
                       </div>
                     </div>
                   )}
@@ -616,20 +679,36 @@ export default function Schedules() {
                     onShowBio={handleShowBio}
                   />
 
+                  {/* Attachments Section */}
+                  {allScheduleFiles.length > 0 && (
+                    <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-white/5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">첨부 파일</label>
+                      <div className="grid grid-cols-1 gap-4">
+                        {allScheduleFiles.map((file, idx) => (
+                          <div key={idx}>
+                            {renderLargeFileAttachment(file, idx, allScheduleFiles)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 flex justify-between items-center">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-white font-black text-xs overflow-hidden">
+                      <div className="w-10 h-10 flex items-center justify-center font-black text-xs overflow-visible">
                         {selectedSchedule.authorId === 'admin' ? (
-                          <Crown size={18} className="fill-white/20" />
+                          <AdminCrown size={20} />
                         ) : (
-                          'H'
+                          <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white overflow-hidden">
+                            H
+                          </div>
                         )}
                       </div>
                       <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Author</p>
                         <p className="text-sm font-black text-slate-900 dark:text-white leading-none flex items-center gap-1">
                           {selectedSchedule.authorId === 'admin' ? '관리자' : '헤이데이즈'}
-                          {selectedSchedule.authorId === 'admin' && <Crown size={12} className="text-indigo-600" />}
+                          {selectedSchedule.authorId === 'admin' && <AdminCrown size={12} />}
                         </p>
                       </div>
                     </div>
@@ -647,7 +726,8 @@ export default function Schedules() {
               </div>
             </motion.div>
           </motion.div>
-        )}
+          );
+        })()}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -688,6 +768,15 @@ export default function Schedules() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {galleryState && (
+          <ImageGallery 
+            images={galleryState.images}
+            initialIndex={galleryState.index}
+            onClose={() => setGalleryState(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -793,17 +882,14 @@ const CommentSection = ({ schedule, onEdit, onDelete, onShowBio }: {
         ))}
       </div>
 
-      <form onSubmit={handleAddComment} className="flex gap-3">
+      <form onSubmit={handleAddComment}>
         <input 
           value={newComment}
           onChange={(e) => setNewComment(e.target.value)}
-          className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
+          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
           placeholder="댓글을 입력하세요..."
           required
         />
-        <button className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors">
-          <Check size={18} />
-        </button>
       </form>
 
       <AnimatePresence>

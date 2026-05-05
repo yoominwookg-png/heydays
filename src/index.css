@@ -8,6 +8,24 @@
   --color-dark-muted: #94a3b8;
 }
 
+@layer components {
+  .message-gold {
+    @apply bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-700/50 shadow-amber-100/50 dark:shadow-amber-900/20 shadow-md;
+  }
+  
+  .message-gold .sender-tag {
+    @apply bg-gradient-to-r from-amber-400 via-amber-200 to-amber-500 text-amber-950 font-black px-2 py-0.5 rounded-md text-[10px] shadow-sm;
+  }
+
+  .message-gold .sender-name {
+    @apply text-amber-800 dark:text-amber-400 font-black;
+  }
+
+  .message-gold .message-content {
+    @apply text-amber-900 dark:text-amber-100;
+  }
+}
+
 @layer base {
   .dark body {
     @apply bg-slate-950 text-slate-50;
