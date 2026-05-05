@@ -26,7 +26,6 @@ import {
   MessageCircle,
   MessageSquare,
   Crown,
-  Eye,
   Heart,
   Download
 } from 'lucide-react';
@@ -77,7 +76,7 @@ const renderLargeFileAttachment = (fileUrl: string, idx: number, allFiles: strin
         <FirestoreImage 
           src={fileUrl} 
           alt={`Attachment ${idx + 1}`} 
-          className="w-full h-auto object-cover aspect-[3/4] hover:scale-105 transition-transform duration-500" 
+          className="w-full h-auto object-cover aspect-video hover:scale-105 transition-transform duration-500" 
         />
       </div>
         <FirestoreFileLink 
@@ -117,6 +116,7 @@ export default function ScoreLibrary() {
   const [scores, setScores] = useState<Score[]>([]);
   const [search, setSearch] = useState('');
   const [selectedScore, setSelectedScore] = useState<Score | null>(null);
+  const [isLiked, setIsLiked] = useState(false);
   const [viewingBioUser, setViewingBioUser] = useState<User | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [scoreToDelete, setScoreToDelete] = useState<Score | null>(null);
@@ -134,6 +134,14 @@ export default function ScoreLibrary() {
   useEffect(() => {
     loadScores();
   }, []);
+
+  useEffect(() => {
+    if (selectedScore) {
+      StorageService.checkIfLikedScore(selectedScore.id).then(setIsLiked);
+    } else {
+      setIsLiked(false);
+    }
+  }, [selectedScore]);
 
   const loadScores = async () => {
     const fetched = await StorageService.getScores();
@@ -321,22 +329,6 @@ export default function ScoreLibrary() {
                       {score.fileType === 'pdf' ? 'PDF' : 'IMAGE'}
                     </span>
                   </h3>
-                  <div className="hidden sm:flex items-center gap-3 text-slate-400 dark:text-slate-600 shrink-0">
-                    <div className="flex items-center gap-1">
-                      <Eye size={14} className="opacity-50" />
-                      <span className="text-[10px] font-bold tabular-nums">{score.views || 0}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Heart size={14} className={score.likes > 0 ? "text-pink-500 fill-pink-500" : "opacity-50"} />
-                      <span className="text-[10px] font-bold tabular-nums">{score.likes || 0}</span>
-                    </div>
-                    {score.commentCount > 0 && (
-                      <div className="flex items-center gap-1">
-                        <MessageSquare size={14} className="text-indigo-500 fill-indigo-500/10" />
-                        <span className="text-[10px] font-bold tabular-nums">{score.commentCount}</span>
-                      </div>
-                    )}
-                  </div>
                 </div>
                 
                 <div className="flex items-center justify-between mt-0.5 md:mt-1">
@@ -348,18 +340,16 @@ export default function ScoreLibrary() {
                     <span className="text-[8px] text-slate-300 dark:text-slate-700 font-black">•</span>
                     <span className="text-[10px] md:text-[11px] font-bold text-slate-400 dark:text-slate-500">{formatDate(score.createdAt)}</span>
                   </div>
-                  
-                  <div className="sm:hidden flex items-center gap-2 text-slate-400 dark:text-slate-600">
-                    <div className="flex items-center gap-0.5">
-                      <Heart size={10} className={score.likes > 0 ? "text-pink-500 fill-pink-500" : ""} />
-                      <span className="text-[9px] font-bold">{score.likes || 0}</span>
+
+                  <div className="flex items-center gap-3 text-slate-400 dark:text-slate-600 ml-auto">
+                    <div className="flex items-center gap-1">
+                      <Heart size={14} className={score.likes > 0 ? "text-pink-500 fill-pink-500" : "opacity-50"} />
+                      <span className="text-[10px] font-bold tabular-nums">{score.likes || 0}</span>
                     </div>
-                    {score.commentCount > 0 && (
-                      <div className="flex items-center gap-0.5">
-                        <MessageSquare size={10} className="text-indigo-500" />
-                        <span className="text-[9px] font-bold">{score.commentCount}</span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      <MessageSquare size={14} className={score.commentCount > 0 ? "text-indigo-500 fill-indigo-500/10" : "opacity-50"} />
+                      <span className="text-[10px] font-bold tabular-nums">{score.commentCount || 0}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -450,6 +440,20 @@ export default function ScoreLibrary() {
         {isViewerOpen && selectedScore && (
           <ScoreViewer 
             score={selectedScore} 
+            isLiked={isLiked}
+            onToggleLike={async () => {
+              await StorageService.toggleScoreLike(selectedScore.id);
+              const liked = await StorageService.checkIfLikedScore(selectedScore.id);
+              setIsLiked(liked);
+              
+              // Refresh scores to get updated count
+              loadScores();
+              
+              // Update current score
+              const updatedScores = await StorageService.getScores();
+              const updated = updatedScores.find(s => s.id === selectedScore.id);
+              if (updated) setSelectedScore(updated);
+            }}
             onClose={() => setIsViewerOpen(false)} 
             onEdit={(s) => { setIsViewerOpen(false); handleEdit(s); }}
             onDelete={(s) => { deleteScore(s); }}
@@ -510,8 +514,10 @@ export default function ScoreLibrary() {
   );
 }
 
-function ScoreViewer({ score, onClose, onEdit, onDelete, onShowBio, onImageClick }: { 
+function ScoreViewer({ score, isLiked, onToggleLike, onClose, onEdit, onDelete, onShowBio, onImageClick }: { 
   score: Score; 
+  isLiked: boolean;
+  onToggleLike: () => void;
   onClose: () => void;
   onEdit: (s: Score) => void;
   onDelete: (s: Score) => void;
@@ -541,7 +547,7 @@ function ScoreViewer({ score, onClose, onEdit, onDelete, onShowBio, onImageClick
         onClick={(e) => e.stopPropagation()}
       >
         {/* Navigation & Metadata Header */}
-        <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
+        <div className="px-8 py-6 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
               <Plus size={20} strokeWidth={3} />
@@ -591,49 +597,42 @@ function ScoreViewer({ score, onClose, onEdit, onDelete, onShowBio, onImageClick
               <h2 className="text-xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase">
                 {score.title}
               </h2>
-              {score.description && (
-                <div className="space-y-6">
-                  <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] border-l-4 border-indigo-600 pl-4 py-1">상세 설명</h3>
-                  <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-lg bg-slate-50/50 dark:bg-slate-800/20 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5">
+            </div>
+
+            {score.description && (
+              <div className="space-y-6">
+                <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] border-l-4 border-indigo-600 pl-4 py-1">상세 설명</h3>
+                <div className="relative group">
+                  <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-lg min-h-[100px]">
                     {score.description}
                   </div>
+
+                  {/* Interaction Stats */}
+                  <div className="flex justify-end mt-6">
+                    <button 
+                      onClick={onToggleLike}
+                      className="flex items-center gap-2 text-slate-400 hover:text-pink-500 transition-colors bg-slate-50 dark:bg-white/5 py-2 px-4 rounded-full"
+                    >
+                      <Heart size={20} className={cn(isLiked ? "fill-pink-500 text-pink-500" : "")} />
+                      <span className="font-black tabular-nums text-base">{score.likes || 0}</span>
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Interaction Stats */}
-            <div className="flex items-center gap-8 py-6 border-y border-slate-100 dark:border-white/5">
-              <button 
-                onClick={async () => {
-                  await StorageService.toggleScoreLike(score.id);
-                  // Refreshing local UI for score detail
-                  // score.likes could be updated by parent refresh, but for detail view we just show the interaction
-                }}
-                className="flex items-center gap-2 text-slate-400 hover:text-pink-500 transition-colors"
-              >
-                <Heart size={24} className={cn(score.likes && score.likes > 0 ? "fill-pink-500 text-pink-500" : "")} />
-                <span className="font-black tabular-nums">{score.likes || 0}</span>
-              </button>
-              <div className="flex items-center gap-2 text-slate-400">
-                <Eye size={24} />
-                <span className="font-black tabular-nums">{score.views || 0}</span>
               </div>
-              <div className="flex items-center gap-2 text-slate-400">
-                <MessageSquare size={24} />
-                <span className="font-black tabular-nums">{score.commentCount || 0}</span>
-              </div>
-            </div>
+            )}
 
-            <CommentSection 
-              score={score} 
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onShowBio={onShowBio}
-            />
+            <div className="pt-2">
+              <CommentSection 
+                score={score} 
+                onEdit={onEdit}
+                onDelete={onDelete}
+                onShowBio={onShowBio}
+              />
+            </div>
 
             {/* Attachments Section */}
             {score.files && score.files.length > 0 && (
-              <div className="mt-8 pt-4 border-t border-slate-100 dark:border-white/5 space-y-4">
+              <div className="mt-8 pt-4 space-y-4">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">첨부 파일</label>
                 <div className="grid grid-cols-1 gap-4">
                   {score.files.map((file, idx) => (
@@ -645,7 +644,7 @@ function ScoreViewer({ score, onClose, onEdit, onDelete, onShowBio, onImageClick
               </div>
             )}
 
-            <div className="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 flex justify-between items-center">
+            <div className="mt-12 pt-8 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 flex items-center justify-center font-black text-xs overflow-visible">
                   {score.authorId === 'admin' ? (
@@ -727,7 +726,7 @@ const CommentSection = ({ score, onEdit, onDelete, onShowBio }: {
   };
 
   return (
-    <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-6">
+    <div className="mt-8 pt-8 space-y-6">
       <div className="flex items-center justify-between">
         <h4 className="font-black text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
           <MessageSquare size={16} /> 댓글 {comments.length}

@@ -206,10 +206,33 @@ export const StorageService = {
   },
 
   async togglePostLike(postId: string) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+    
     try {
-      await updateDoc(doc(db, 'posts', postId), { likes: increment(1) });
+      const likeRef = doc(db, `posts/${postId}/likes`, userId);
+      const likeSnap = await getDoc(likeRef);
+      
+      if (likeSnap.exists()) {
+        await deleteDoc(likeRef);
+        await updateDoc(doc(db, 'posts', postId), { likes: increment(-1) });
+      } else {
+        await setDoc(likeRef, { at: Date.now() });
+        await updateDoc(doc(db, 'posts', postId), { likes: increment(1) });
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `posts/${postId}`);
+    }
+  },
+
+  async checkIfLikedPost(postId: string): Promise<boolean> {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return false;
+    try {
+      const likeSnap = await getDoc(doc(db, `posts/${postId}/likes`, userId));
+      return likeSnap.exists();
+    } catch (error) {
+      return false;
     }
   },
 
@@ -367,10 +390,33 @@ export const StorageService = {
   },
 
   async toggleScheduleLike(id: string) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+    
     try {
-      await updateDoc(doc(db, 'schedules', id), { likes: increment(1) });
+      const likeRef = doc(db, `schedules/${id}/likes`, userId);
+      const likeSnap = await getDoc(likeRef);
+      
+      if (likeSnap.exists()) {
+        await deleteDoc(likeRef);
+        await updateDoc(doc(db, 'schedules', id), { likes: increment(-1) });
+      } else {
+        await setDoc(likeRef, { at: Date.now() });
+        await updateDoc(doc(db, 'schedules', id), { likes: increment(1) });
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `schedules/${id}`);
+    }
+  },
+
+  async checkIfLikedSchedule(id: string): Promise<boolean> {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return false;
+    try {
+      const likeSnap = await getDoc(doc(db, `schedules/${id}/likes`, userId));
+      return likeSnap.exists();
+    } catch (error) {
+      return false;
     }
   },
 
@@ -606,10 +652,33 @@ export const StorageService = {
   },
 
   async toggleScoreLike(id: string) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+    
     try {
-      await updateDoc(doc(db, 'scores', id), { likes: increment(1) });
+      const likeRef = doc(db, `scores/${id}/likes`, userId);
+      const likeSnap = await getDoc(likeRef);
+      
+      if (likeSnap.exists()) {
+        await deleteDoc(likeRef);
+        await updateDoc(doc(db, 'scores', id), { likes: increment(-1) });
+      } else {
+        await setDoc(likeRef, { at: Date.now() });
+        await updateDoc(doc(db, 'scores', id), { likes: increment(1) });
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `scores/${id}`);
+    }
+  },
+
+  async checkIfLikedScore(id: string): Promise<boolean> {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return false;
+    try {
+      const likeSnap = await getDoc(doc(db, `scores/${id}/likes`, userId));
+      return likeSnap.exists();
+    } catch (error) {
+      return false;
     }
   },
 

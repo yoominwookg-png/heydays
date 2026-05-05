@@ -9,7 +9,6 @@ import {
   Plus, 
   Crown,
   Heart, 
-  Eye, 
   MessageSquare, 
   Pin, 
   X,
@@ -48,6 +47,7 @@ export default function Board({ type, title }: BoardProps) {
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [viewingBioUser, setViewingBioUser] = useState<User | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [isLiked, setIsLiked] = useState(false);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
   const [commentToDelete, setCommentToDelete] = useState<{comment: Comment, postId: string} | null>(null);
   const [commentRefreshTrigger, setCommentRefreshTrigger] = useState(0);
@@ -57,6 +57,14 @@ export default function Board({ type, title }: BoardProps) {
   useEffect(() => {
     loadPosts();
   }, [type]);
+
+  useEffect(() => {
+    if (selectedPost) {
+      StorageService.checkIfLikedPost(selectedPost.id).then(setIsLiked);
+    } else {
+      setIsLiked(false);
+    }
+  }, [selectedPost]);
 
   const loadPosts = async () => {
     const allPosts = await StorageService.getPosts();
@@ -178,7 +186,7 @@ export default function Board({ type, title }: BoardProps) {
     };
 
     return (
-      <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-6">
+      <div className="mt-8 pt-8 space-y-6">
         <div className="flex items-center justify-between">
           <h4 className="font-black text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <MessageSquare size={16} /> 댓글 {comments.length}
@@ -563,8 +571,7 @@ export default function Board({ type, title }: BoardProps) {
             layout
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            onClick={async () => {
-              await StorageService.incrementViews(post.id);
+            onClick={() => {
               setSelectedPost(post);
             }}
             className={cn(
@@ -585,22 +592,6 @@ export default function Board({ type, title }: BoardProps) {
                     {post.isPinned && <Pin size={12} className="inline mr-1.5 text-indigo-600 fill-indigo-600 mb-0.5" />}
                     {post.title}
                   </h3>
-                  <div className="hidden sm:flex items-center gap-3 text-slate-400 dark:text-slate-600 shrink-0">
-                    <div className="flex items-center gap-1">
-                      <Eye size={14} className="opacity-50" />
-                      <span className="text-[10px] font-bold tabular-nums">{post.views}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Heart size={14} className={post.likes > 0 ? "text-pink-500 fill-pink-500" : "opacity-50"} />
-                      <span className="text-[10px] font-bold tabular-nums">{post.likes}</span>
-                    </div>
-                    {post.commentCount > 0 && (
-                      <div className="flex items-center gap-1">
-                        <MessageSquare size={14} className="text-indigo-500 fill-indigo-500/10" />
-                        <span className="text-[10px] font-bold tabular-nums">{post.commentCount}</span>
-                      </div>
-                    )}
-                  </div>
                 </div>
                 
                 <div className="flex items-center justify-between mt-0.5 md:mt-1">
@@ -612,18 +603,16 @@ export default function Board({ type, title }: BoardProps) {
                     <span className="text-[8px] text-slate-300 dark:text-slate-700 font-black">•</span>
                     <span className="text-[10px] md:text-[11px] font-bold text-slate-400 dark:text-slate-500">{formatDate(post.createdAt)}</span>
                   </div>
-                  
-                  <div className="sm:hidden flex items-center gap-2 text-slate-400 dark:text-slate-600">
-                    <div className="flex items-center gap-0.5">
-                      <Heart size={10} className={post.likes > 0 ? "text-pink-500 fill-pink-500" : ""} />
-                      <span className="text-[9px] font-bold">{post.likes}</span>
+
+                  <div className="flex items-center gap-3 text-slate-400 dark:text-slate-600">
+                    <div className="flex items-center gap-1">
+                      <Heart size={14} className={post.likes > 0 ? "text-pink-500 fill-pink-500" : "opacity-50"} />
+                      <span className="text-[10px] font-bold tabular-nums">{post.likes}</span>
                     </div>
-                    {post.commentCount > 0 && (
-                      <div className="flex items-center gap-0.5">
-                        <MessageSquare size={10} className="text-indigo-500" />
-                        <span className="text-[9px] font-bold">{post.commentCount}</span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      <MessageSquare size={14} className={post.commentCount > 0 ? "text-indigo-500 fill-indigo-500/10" : "opacity-50"} />
+                      <span className="text-[10px] font-bold tabular-nums">{post.commentCount || 0}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -742,7 +731,7 @@ export default function Board({ type, title }: BoardProps) {
               onClick={(e) => e.stopPropagation()}
             >
               {/* Navigation & Metadata Header */}
-              <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
+              <div className="px-8 py-6 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
                     <Pin size={20} strokeWidth={3} />
@@ -785,37 +774,43 @@ export default function Board({ type, title }: BoardProps) {
                     </h2>
                   </div>
 
-                  {/* Interaction Stats */}
-                  <div className="flex items-center gap-8 py-6 border-y border-slate-100 dark:border-white/5">
-                    <button 
-                      onClick={async () => {
-                        await StorageService.togglePostLike(selectedPost.id);
-                        loadPosts();
-                        setSelectedPost({...selectedPost, likes: (selectedPost.likes || 0) + 1});
-                      }}
-                      className="flex items-center gap-2 text-slate-400 hover:text-pink-500 transition-colors"
-                    >
-                      <Heart size={24} className={cn(selectedPost.likes && selectedPost.likes > 0 ? "fill-pink-500 text-pink-500" : "")} />
-                      <span className="font-black tabular-nums">{selectedPost.likes || 0}</span>
-                    </button>
-                    <div className="flex items-center gap-2 text-slate-400">
-                      <Eye size={24} />
-                      <span className="font-black tabular-nums">{selectedPost.views || 0}</span>
+                  {/* Content Body with Interaction Stats at Bottom Right */}
+                  <div className="relative group/content">
+                    <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-base md:text-lg min-h-[100px]">
+                      {selectedPost.content}
+                    </div>
+
+                    <div className="flex justify-end mt-6">
+                      <button 
+                        onClick={async () => {
+                          if (!selectedPost) return;
+                          await StorageService.togglePostLike(selectedPost.id);
+                          const liked = await StorageService.checkIfLikedPost(selectedPost.id);
+                          setIsLiked(liked);
+                          
+                          // Refresh post data to get updated like count
+                          const posts = await StorageService.getPosts();
+                          const updated = posts.find(p => p.id === selectedPost.id);
+                          if (updated) {
+                            setSelectedPost(updated);
+                          }
+                          loadPosts();
+                        }}
+                        className="flex items-center gap-2 text-slate-400 hover:text-pink-500 transition-colors bg-slate-50 dark:bg-white/5 py-2 px-4 rounded-full"
+                      >
+                        <Heart size={20} className={cn(isLiked ? "fill-pink-500 text-pink-500" : "")} />
+                        <span className="font-black tabular-nums text-base">{selectedPost.likes || 0}</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* Content Body */}
-                  <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-base md:text-lg bg-slate-50/50 dark:bg-slate-800/20 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 min-h-[200px]">
-                    {selectedPost.content}
-                  </div>
-
-                  <div className="border-t border-slate-100 dark:border-white/5 pt-10">
+                  <div className="pt-2">
                     <CommentSection post={selectedPost} />
                   </div>
 
                   {/* Attachments Section */}
                   {allPostFiles.length > 0 && (
-                    <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-white/5">
+                    <div className="space-y-4 pt-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">첨부 파일</label>
                       <div className="grid grid-cols-1 gap-4">
                         {allPostFiles.map((file, idx) => (
@@ -828,7 +823,7 @@ export default function Board({ type, title }: BoardProps) {
                   )}
                 </div>
 
-                <div className="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 flex justify-between items-center">
+                <div className="mt-12 pt-8 flex justify-between items-center">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 flex items-center justify-center font-black text-xs overflow-visible">
                       {selectedPost.authorId === 'admin' || selectedPost.authorName === '관리자' ? (

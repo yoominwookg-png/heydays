@@ -94,12 +94,18 @@ service cloud.firestore {
                       (incoming().type == 'notice' ? isAdmin() : true);
       allow update: if isVerified() && isValidId(postId) && (
                       (isOwner(existing().authorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'files', 'fileData', 'commentCount', 'isPinned', 'authorName']) && isValidPost(incoming())) ||
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && incoming().likes == existing().get('likes', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && (incoming().likes == existing().get('likes', 0) + 1 || (incoming().likes == existing().get('likes', 0) - 1 && existing().get('likes', 0) > 0))) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number) ||
                       isAdmin()
                     );
       allow delete: if isSignedIn() && isValidId(postId) && (isOwner(existing().authorId) || isAdmin());
+    }
+
+    match /posts/{postId}/likes/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified() && isOwner(userId) && incoming().keys().hasAll(['at']) && incoming().at is number;
+      allow delete: if isVerified() && isOwner(userId);
     }
 
     // 3. Comments
@@ -140,11 +146,17 @@ service cloud.firestore {
                       isValidSchedule(incoming()) && incoming().authorId == request.auth.uid;
       allow update: if isVerified() && isValidId(scheduleId) && (
                       (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'date', 'location', 'description', 'files', 'mapQuery']) && isValidSchedule(incoming())) ||
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && incoming().likes == existing().get('likes', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && (incoming().likes == existing().get('likes', 0) + 1 || (incoming().likes == existing().get('likes', 0) - 1 && existing().get('likes', 0) > 0))) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number)
                     );
       allow delete: if isVerified() && isAdmin() && isValidId(scheduleId);
+    }
+
+    match /schedules/{scheduleId}/likes/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified() && isOwner(userId) && incoming().keys().hasAll(['at']) && incoming().at is number;
+      allow delete: if isVerified() && isOwner(userId);
     }
 
     match /schedules/{scheduleId}/comments/{commentId} {
@@ -182,12 +194,18 @@ service cloud.firestore {
                       isValidId(scoreId);
       allow update: if isVerified() && isValidId(scoreId) && (
                       (isOwner(existing().authorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'fileData', 'files']) && isValidScore(incoming())) ||
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && incoming().likes == existing().get('likes', 0) + 1) ||
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && (incoming().likes == existing().get('likes', 0) + 1 || (incoming().likes == existing().get('likes', 0) - 1 && existing().get('likes', 0) > 0))) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number) ||
                       isAdmin()
                     );
       allow delete: if isVerified() && (isOwner(existing().authorId) || isAdmin()) && isValidId(scoreId);
+    }
+
+    match /scores/{scoreId}/likes/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified() && isOwner(userId) && incoming().keys().hasAll(['at']) && incoming().at is number;
+      allow delete: if isVerified() && isOwner(userId);
     }
 
     match /scores/{scoreId}/comments/{commentId} {

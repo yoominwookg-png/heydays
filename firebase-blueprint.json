@@ -154,13 +154,25 @@
       "schema": "Comment",
       "description": "Comments on posts"
     },
+    "posts/{postId}/likes/{userId}": {
+      "schema": { "type": "object", "properties": { "at": { "type": "number" } } },
+      "description": "User likes on posts"
+    },
     "schedules/{scheduleId}": {
       "schema": "Schedule",
       "description": "Band schedules"
     },
+    "schedules/{scheduleId}/likes/{userId}": {
+      "schema": { "type": "object", "properties": { "at": { "type": "number" } } },
+      "description": "User likes on schedules"
+    },
     "scores/{scoreId}": {
       "schema": "Score",
       "description": "Shared musical scores"
+    },
+    "scores/{scoreId}/likes/{userId}": {
+      "schema": { "type": "object", "properties": { "at": { "type": "number" } } },
+      "description": "User likes on scores"
     },
     "scores/{scoreId}/notes/{noteId}": {
       "schema": "ScoreNote",

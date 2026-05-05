@@ -20,14 +20,16 @@ import {
   Image as ImageIcon,
   ExternalLink,
   MessageCircle,
+  MessageSquare,
   Crown,
   FileText,
-  Download
+  Download,
+  Heart
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import { useAuth } from '../services/auth';
 import { Schedule, UserRole, Comment, User } from '../types';
-import { cn } from '../lib/utils';
+import { cn, formatDate } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 import FileUploadZone from '../components/FileUploadZone';
@@ -45,6 +47,7 @@ export default function Schedules() {
   const [isAdding, setIsAdding] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [isLiked, setIsLiked] = useState(false);
   const [viewingBioUser, setViewingBioUser] = useState<User | null>(null);
   const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(null);
   const [galleryState, setGalleryState] = useState<{ images: string[], index: number } | null>(null);
@@ -66,6 +69,14 @@ export default function Schedules() {
     };
     fetchSchedules();
   }, []);
+
+  useEffect(() => {
+    if (selectedSchedule) {
+      StorageService.checkIfLikedSchedule(selectedSchedule.id).then(setIsLiked);
+    } else {
+      setIsLiked(false);
+    }
+  }, [selectedSchedule]);
 
   const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const firstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
@@ -313,7 +324,7 @@ export default function Schedules() {
   };
 
   return (
-    <div className="max-w-none space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 px-1">
+    <div className="max-w-none space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 px-1">
       <UserBioModal user={viewingBioUser} onClose={() => setViewingBioUser(null)} />
       <div className="flex items-center justify-between gap-4">
         <div>
@@ -344,10 +355,10 @@ export default function Schedules() {
         )}
       </div>
 
-      <div className="space-y-12 max-w-3xl mx-auto">
+      <div className="space-y-6 max-w-3xl mx-auto">
         {/* Calendar Section - narrowed and more spacious cells */}
-        <div className="bg-white dark:bg-slate-900 py-6 px-4 md:py-10 md:px-8 rounded-[3.5rem] border border-slate-100 dark:border-white/5 shadow-sm">
-          <div className="flex items-center justify-between mb-8 px-4">
+        <div className="bg-white dark:bg-slate-900 py-4 px-4 md:py-6 md:px-8 rounded-[3.5rem] border border-slate-100 dark:border-white/5 shadow-sm">
+          <div className="flex items-center justify-between mb-4 px-4">
             <button onClick={prevMonth} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-2xl transition-all">
               <ChevronLeft size={24} strokeWidth={3} />
             </button>
@@ -359,10 +370,10 @@ export default function Schedules() {
             </button>
           </div>
 
-          <div className="grid grid-cols-7 mb-4">
+          <div className="grid grid-cols-7 mb-2">
             {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
               <div key={d} className={cn(
-                "py-2 text-center text-xs font-black tracking-[0.2em] uppercase",
+                "py-1 text-center text-xs font-black tracking-[0.2em] uppercase",
                 i === 0 ? "text-red-500/60" : i === 6 ? "text-blue-500/60" : "text-slate-300 dark:text-slate-600"
               )}>
                 {d}
@@ -370,7 +381,7 @@ export default function Schedules() {
             ))}
           </div>
           
-          <div className="grid grid-cols-7 gap-1 md:gap-4">
+          <div className="grid grid-cols-7 gap-1 md:gap-2">
             {calendarDays.map((day, i) => {
               const daySchedules = day ? getSchedulesForDay(day) : [];
               const hasPerformance = daySchedules.length > 0;
@@ -382,14 +393,14 @@ export default function Schedules() {
               const hasPerformanceInFuture = day && hasPerformance;
 
               return (
-                <div key={i} className="flex flex-col items-center justify-center relative min-h-[40px] md:min-h-[60px]">
+                <div key={i} className="flex flex-col items-center justify-center relative min-h-[32px] md:min-h-[40px]">
                   {day && (
                     <button 
                       onClick={() => setSelectedDay(day)}
-                      className="flex flex-col items-center group transition-all w-full h-full justify-start pt-1 md:pt-2"
+                      className="flex flex-col items-center group transition-all w-full h-full justify-start pt-1"
                     >
                       <div className={cn(
-                        "w-7 h-7 md:w-10 md:h-10 flex items-center justify-center rounded-lg md:rounded-xl text-xs md:text-base font-black transition-all relative z-10",
+                        "w-7 h-7 md:w-8 md:h-8 flex items-center justify-center rounded-lg md:rounded-xl text-xs md:text-sm font-black transition-all relative z-10",
                         isSelected ? "bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.5)] scale-110" : (isToday ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"),
                         !isSelected && (isSunday || isHoliday) && "text-red-500",
                         !isSelected && isSaturday && !isToday && !isHoliday && "text-blue-500",
@@ -450,24 +461,39 @@ export default function Schedules() {
                   </div>
                   
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="px-1 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded text-[7px] font-black uppercase tracking-widest flex-shrink-0">공연</span>
-                      <h4 
-                        onClick={(e) => { e.stopPropagation(); setSelectedSchedule(s); }}
-                        className="text-sm font-black text-slate-900 dark:text-white truncate hover:text-indigo-600 transition-colors uppercase tracking-tight"
-                      >
-                        {s.title}
-                      </h4>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="px-1 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded text-[7px] font-black uppercase tracking-widest flex-shrink-0">공연</span>
+                        <h4 
+                          onClick={(e) => { e.stopPropagation(); setSelectedSchedule(s); }}
+                          className="text-sm font-black text-slate-900 dark:text-white truncate hover:text-indigo-600 transition-colors uppercase tracking-tight"
+                        >
+                          {s.title}
+                        </h4>
+                      </div>
                     </div>
                     
-                    <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500">
-                      <div className="flex items-center gap-1 text-[9px] font-bold">
-                        <MapPin size={10} className="text-indigo-500" />
-                        <span className="truncate">{s.location}</span>
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="flex items-center gap-3 text-slate-400 dark:text-slate-500">
+                        <div className="flex items-center gap-1 text-[9px] font-bold">
+                          <MapPin size={10} className="text-indigo-500" />
+                          <span className="truncate">{s.location}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[9px] font-bold">
+                          <Clock size={10} className="text-indigo-500" />
+                          <span>{s.time || '시간 미지정'}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 text-[9px] font-bold">
-                        <Clock size={10} className="text-indigo-500" />
-                        <span>{s.time || '시간 미지정'}</span>
+
+                      <div className="flex items-center gap-3 text-slate-400 dark:text-slate-600 ml-auto">
+                        <div className="flex items-center gap-1">
+                          <Heart size={14} className={s.likes > 0 ? "text-pink-500 fill-pink-500" : "opacity-50"} />
+                          <span className="text-[10px] font-bold tabular-nums">{s.likes || 0}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <MessageSquare size={14} className={s.commentCount > 0 ? "text-indigo-500 fill-indigo-500/10" : "opacity-50"} />
+                          <span className="text-[10px] font-bold tabular-nums">{s.commentCount || 0}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -601,7 +627,7 @@ export default function Schedules() {
               className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/5 overflow-hidden flex flex-col max-h-[90vh]"
             >
               {/* Navigation & Metadata Header */}
-              <div className="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
+              <div className="px-8 py-6 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
                     <CalendarIcon size={20} strokeWidth={3} />
@@ -666,22 +692,47 @@ export default function Schedules() {
                   {selectedSchedule.description && (
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">상세 설명</label>
-                      <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-base bg-slate-50/50 dark:bg-slate-800/20 p-6 rounded-[2rem] border border-slate-100 dark:border-white/5">
-                        {selectedSchedule.description}
+                      <div className="relative group/content">
+                        <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-base min-h-[100px]">
+                          {selectedSchedule.description}
+                        </div>
+
+                        {/* Interaction Stats */}
+                        <div className="flex justify-end mt-6">
+                          <button 
+                            onClick={async () => {
+                              if (!selectedSchedule) return;
+                              await StorageService.toggleScheduleLike(selectedSchedule.id);
+                              const liked = await StorageService.checkIfLikedSchedule(selectedSchedule.id);
+                              setIsLiked(liked);
+                              
+                              const updated = await StorageService.getSchedules();
+                              setSchedules(updated);
+                              const found = updated.find(s => s.id === selectedSchedule!.id);
+                              if (found) setSelectedSchedule(found);
+                            }}
+                            className="flex items-center gap-2 text-slate-400 hover:text-pink-500 transition-colors bg-slate-50 dark:bg-white/5 py-2 px-4 rounded-full"
+                          >
+                            <Heart size={20} className={cn(isLiked ? "fill-pink-500 text-pink-500" : "")} />
+                            <span className="font-black tabular-nums text-base">{selectedSchedule.likes || 0}</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  <CommentSection 
-                    schedule={selectedSchedule} 
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onShowBio={handleShowBio}
-                  />
+                  <div className="pt-2">
+                    <CommentSection 
+                      schedule={selectedSchedule} 
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      onShowBio={handleShowBio}
+                    />
+                  </div>
 
                   {/* Attachments Section */}
                   {allScheduleFiles.length > 0 && (
-                    <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-white/5">
+                    <div className="space-y-4 pt-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">첨부 파일</label>
                       <div className="grid grid-cols-1 gap-4">
                         {allScheduleFiles.map((file, idx) => (
@@ -693,7 +744,7 @@ export default function Schedules() {
                     </div>
                   )}
 
-                  <div className="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 flex justify-between items-center">
+                  <div className="mt-12 pt-8 flex justify-between items-center">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 flex items-center justify-center font-black text-xs overflow-visible">
                         {selectedSchedule.authorId === 'admin' ? (
@@ -827,7 +878,7 @@ const CommentSection = ({ schedule, onEdit, onDelete, onShowBio }: {
   };
 
   return (
-    <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-6">
+    <div className="mt-8 pt-8 space-y-6">
       <div className="flex items-center justify-between">
         <h4 className="font-black text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
           댓글 {comments.length}
