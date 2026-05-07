@@ -47,7 +47,8 @@ service cloud.firestore {
                data.createdAt is number &&
                (!('avatar' in data) || data.avatar is string) &&
                (!('bio' in data) || data.bio is string) &&
-               (!('deletedAt' in data) || data.deletedAt is number);
+               (!('deletedAt' in data) || data.deletedAt is number) &&
+               (!('lastActiveAt' in data) || data.lastActiveAt is number);
       }
 
       allow get: if isSignedIn() && isValidId(userId);
@@ -56,10 +57,10 @@ service cloud.firestore {
       allow create: if isSignedIn() && isOwner(userId) && 
                       isValidUser(incoming()) && 
                       isValidId(userId);
-      allow update: if isVerified() && isValidId(userId) && (
-                      (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'bio', 'deletedAt']) && isValidUser(incoming())) ||
-                      (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'deletedAt']) && isValidUser(incoming()))
-                    ) || (isVerified() && isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'bio']) && isValidUser(incoming()));
+      allow update: if (isVerified() || isAdmin()) && isValidId(userId) && (
+                      (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'bio', 'deletedAt', 'lastActiveAt']) && isValidUser(incoming())) ||
+                      (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'deletedAt', 'lastActiveAt']) && isValidUser(incoming()))
+                    );
       allow delete: if isVerified() && isValidId(userId) && isAdmin();
     }
     
@@ -81,25 +82,25 @@ service cloud.firestore {
                data.createdAt is number &&
                data.likes is number &&
                data.views is number &&
-               (!('files' in data) || (data.files is list && data.files.size() <= 10)) &&
-               (!('fileData' in data) || data.fileData is string) &&
-               (!('commentCount' in data) || data.commentCount is number) &&
-               (!('isPinned' in data) || data.isPinned is bool);
+               (!('files' in data) || data.files is list || data.files == null) &&
+               (!('fileData' in data) || data.fileData is string || data.fileData == null) &&
+               (!('commentCount' in data) || data.commentCount is number || data.commentCount == null) &&
+               (!('isPinned' in data) || data.isPinned is bool || data.isPinned == null);
       }
 
       allow read: if isSignedIn() && isValidId(postId);
       allow list: if isSignedIn(); 
-      allow create: if isVerified() && isValidId(postId) && isValidPost(incoming()) && 
+      allow create: if (isVerified() || isAdmin()) && isValidId(postId) && isValidPost(incoming()) && 
                       incoming().authorId == request.auth.uid &&
                       (incoming().type == 'notice' ? isAdmin() : true);
-      allow update: if isVerified() && isValidId(postId) && (
+      allow update: if (isVerified() || isAdmin()) && isValidId(postId) && (
                       (isOwner(existing().authorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'files', 'fileData', 'commentCount', 'isPinned', 'authorName']) && isValidPost(incoming())) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && (incoming().likes == existing().get('likes', 0) + 1 || (incoming().likes == existing().get('likes', 0) - 1 && existing().get('likes', 0) > 0))) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number) ||
                       isAdmin()
                     );
-      allow delete: if isSignedIn() && isValidId(postId) && (isOwner(existing().authorId) || isAdmin());
+      allow delete: if (isSignedIn() || isAdmin()) && isValidId(postId) && (isOwner(existing().authorId) || isAdmin());
     }
 
     match /posts/{postId}/likes/{userId} {
@@ -133,24 +134,24 @@ service cloud.firestore {
                data.description is string &&
                data.authorId is string &&
                data.createdAt is number &&
-               (!('files' in data) || (data.files is list && data.files.size() <= 10)) &&
-               (!('mapQuery' in data) || data.mapQuery is string) &&
-               (!('likes' in data) || data.likes is number) &&
-               (!('views' in data) || data.views is number) &&
-               (!('commentCount' in data) || data.commentCount is number);
+               (!('files' in data) || data.files is list || data.files == null) &&
+               (!('mapQuery' in data) || data.mapQuery is string || data.mapQuery == null) &&
+               (!('likes' in data) || data.likes is number || data.likes == null) &&
+               (!('views' in data) || data.views is number || data.views == null) &&
+               (!('commentCount' in data) || data.commentCount is number || data.commentCount == null);
       }
 
       allow read: if isSignedIn() && isValidId(scheduleId);
       allow list: if isSignedIn();
-      allow create: if isVerified() && isAdmin() && isValidId(scheduleId) && 
+      allow create: if (isVerified() || isAdmin()) && isAdmin() && isValidId(scheduleId) && 
                       isValidSchedule(incoming()) && incoming().authorId == request.auth.uid;
-      allow update: if isVerified() && isValidId(scheduleId) && (
+      allow update: if (isVerified() || isAdmin()) && isValidId(scheduleId) && (
                       (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'date', 'location', 'description', 'files', 'mapQuery']) && isValidSchedule(incoming())) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && (incoming().likes == existing().get('likes', 0) + 1 || (incoming().likes == existing().get('likes', 0) - 1 && existing().get('likes', 0) > 0))) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number)
                     );
-      allow delete: if isVerified() && isAdmin() && isValidId(scheduleId);
+      allow delete: if (isVerified() || isAdmin()) && isAdmin() && isValidId(scheduleId);
     }
 
     match /schedules/{scheduleId}/likes/{userId} {
@@ -179,27 +180,31 @@ service cloud.firestore {
                data.fileType in ['pdf', 'jpg', 'png'] &&
                data.authorId is string &&
                data.createdAt is number &&
-               (!('description' in data) || data.description is string) &&
-               (!('fileData' in data) || data.fileData is string) &&
-               (!('files' in data) || (data.files is list && data.files.size() <= 10)) &&
-               (!('likes' in data) || data.likes is number) &&
-               (!('views' in data) || data.views is number) &&
-               (!('commentCount' in data) || data.commentCount is number);
+               (!('artist' in data) || data.artist is string || data.artist == null) &&
+               (!('description' in data) || data.description is string || data.description == null) &&
+               (!('fileData' in data) || data.fileData is string || data.fileData == null) &&
+               (!('files' in data) || data.files is list || data.files == null) &&
+               (!('musicVideoId' in data) || data.musicVideoId is string || data.musicVideoId == null) &&
+               (!('musicThumbnail' in data) || data.musicThumbnail is string || data.musicThumbnail == null) &&
+               (!('musicTitle' in data) || data.musicTitle is string || data.musicTitle == null) &&
+               (!('likes' in data) || data.likes is number || data.likes == null) &&
+               (!('views' in data) || data.views is number || data.views == null) &&
+               (!('commentCount' in data) || data.commentCount is number || data.commentCount == null);
       }
 
       allow read: if isSignedIn() && isValidId(scoreId);
       allow list: if isSignedIn();
-      allow create: if isVerified() && isValidScore(incoming()) && 
+      allow create: if (isVerified() || isAdmin()) && isValidScore(incoming()) && 
                       incoming().authorId == request.auth.uid && 
                       isValidId(scoreId);
-      allow update: if isVerified() && isValidId(scoreId) && (
-                      (isOwner(existing().authorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'fileData', 'files']) && isValidScore(incoming())) ||
+      allow update: if (isVerified() || isAdmin()) && isValidId(scoreId) && (
+                      (isOwner(existing().authorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'description', 'fileData', 'files', 'musicVideoId', 'musicThumbnail', 'musicTitle']) && isValidScore(incoming())) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && (incoming().likes == existing().get('likes', 0) + 1 || (incoming().likes == existing().get('likes', 0) - 1 && existing().get('likes', 0) > 0))) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views == existing().get('views', 0) + 1) ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['commentCount']) && incoming().commentCount is number) ||
                       isAdmin()
                     );
-      allow delete: if isVerified() && (isOwner(existing().authorId) || isAdmin()) && isValidId(scoreId);
+      allow delete: if (isVerified() || isAdmin()) && (isOwner(existing().authorId) || isAdmin()) && isValidId(scoreId);
     }
 
     match /scores/{scoreId}/likes/{userId} {
@@ -281,6 +286,60 @@ service cloud.firestore {
     // 10. System Health Check
     match /system/health {
       allow read: if true;
+    }
+
+    // 11. Chat Rooms
+    match /chatRooms/{roomId} {
+      function isValidChatRoom(data) {
+        return data.id is string &&
+               data.participants is list && data.participants.size() >= 2 &&
+               data.createdAt is number &&
+               data.updatedAt is number &&
+               (!('participantNames' in data) || data.participantNames is list) &&
+               (!('activeParticipants' in data) || data.activeParticipants is list) &&
+               (!('status' in data) || data.status in ['active', 'ended']) &&
+               (!('endedAt' in data) || data.endedAt is number || data.endedAt == null) &&
+               (!('lastMessage' in data) || data.lastMessage is string);
+      }
+
+      function isParticipant(data) {
+        return isSignedIn() && request.auth.uid in data.participants;
+      }
+      
+      allow read, get: if isParticipant(resource.data) || isAdmin();
+      allow list: if (isSignedIn() && request.auth.uid in resource.data.participants) || isAdmin();
+      allow create: if isVerified() && 
+                      request.auth.uid in incoming().participants && 
+                      isValidChatRoom(incoming()) &&
+                      isValidId(roomId);
+      allow update: if isVerified() && (isParticipant(existing()) || isAdmin()) && (
+                      // Add new participant or update active list
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['participants', 'participantNames', 'activeParticipants', 'status', 'endedAt', 'updatedAt', 'lastMessage']) && 
+                       isValidChatRoom(incoming())) ||
+                      isAdmin()
+                    );
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        function isValidChatMessage(data) {
+          return data.id is string &&
+                 data.roomId == roomId &&
+                 data.senderId == request.auth.uid &&
+                 data.senderName is string &&
+                 data.content is string && data.content.size() <= 5000 &&
+                 data.createdAt is number &&
+                 (!('fileUrl' in data) || data.fileUrl is string) &&
+                 (!('fileName' in data) || data.fileName is string) &&
+                 (!('fileType' in data) || data.fileType is string) &&
+                 (!('previewUrl' in data) || data.previewUrl is string);
+        }
+
+        allow read, list: if isParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data) || isAdmin();
+        allow create: if isVerified() && 
+                        isParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data) &&
+                        isValidChatMessage(incoming());
+        allow delete: if isAdmin();
+      }
     }
   }
 }

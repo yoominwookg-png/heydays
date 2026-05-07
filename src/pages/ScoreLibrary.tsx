@@ -27,9 +27,13 @@ import {
   MessageSquare,
   Crown,
   Heart,
-  Download
+  Download,
+  Youtube,
+  ExternalLink,
+  Play
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
+import { MusicService, MusicSearchResult } from '../services/musicService';
 import { Score, ScoreNote, UserRole, Comment, User } from '../types';
 import { useAuth } from '../services/auth';
 import { useUsersContext } from '../contexts/UsersContext';
@@ -42,6 +46,8 @@ import { FirestoreImage } from '../components/FirestoreImage';
 import { FirestoreFileLink } from '../components/FirestoreFileLink';
 import ImageGallery from '../components/ImageGallery';
 import { AdminCrown } from '../components/AdminCrown';
+
+import { SmartYoutubePlayer } from '../components/SmartYoutubePlayer';
 
 const isImageFile = (url: string) => {
   return url.match(/\.(jpeg|jpg|gif|png|webp)(?:_|\?|%3F|$)/i) !== null;
@@ -127,9 +133,18 @@ export default function ScoreLibrary() {
   const [isUploading, setIsUploading] = useState(false);
   const [editingScore, setEditingScore] = useState<Score | null>(null);
   const [newScoreTitle, setNewScoreTitle] = useState('');
+  const [newScoreArtist, setNewScoreArtist] = useState('');
   const [newScoreDescription, setNewScoreDescription] = useState('');
   const [scoreFileItems, setScoreFileItems] = useState<{file?: File, url: string}[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Music Search Modal States
+  const [isMusicModalOpen, setIsMusicModalOpen] = useState(false);
+  const [musicSearchTitle, setMusicSearchTitle] = useState('');
+  const [musicSearchArtist, setMusicSearchArtist] = useState('');
+  const [musicSearchResults, setMusicSearchResults] = useState<MusicSearchResult[]>([]);
+  const [isSearchingMusic, setIsSearchingMusic] = useState(false);
+  const [selectedMusic, setSelectedMusic] = useState<MusicSearchResult | null>(null);
 
   useEffect(() => {
     loadScores();
@@ -164,8 +179,19 @@ export default function ScoreLibrary() {
     if (!isAdmin && !isAuthor) return;
     setEditingScore(score);
     setNewScoreTitle(score.title);
+    setNewScoreArtist(score.artist || '');
     setNewScoreDescription(score.description || '');
     setScoreFileItems(score.files?.map(url => ({ url })) || []);
+    if (score.musicVideoId) {
+      setSelectedMusic({
+        videoId: score.musicVideoId,
+        title: score.musicTitle || '',
+        thumbnail: score.musicThumbnail || '',
+        artist: score.artist
+      });
+    } else {
+      setSelectedMusic(null);
+    }
     setIsUploading(true);
   };
 
@@ -175,6 +201,35 @@ export default function ScoreLibrary() {
       setViewingBioUser(userToView);
     }
   };
+
+  // Debounced Music Search in Modal
+  useEffect(() => {
+    if (!isMusicModalOpen) return;
+    
+    setIsSearchingMusic(true);
+    const handler = setTimeout(async () => {
+      if (!musicSearchTitle.trim()) {
+        setMusicSearchResults([]);
+        setIsSearchingMusic(false);
+        return;
+      }
+      
+      try {
+        const results = await MusicService.searchMusic(musicSearchTitle, musicSearchArtist);
+        setMusicSearchResults(results.slice(0, 3)); // Limit to top 3
+      } catch (error: any) {
+        console.error('Music search failed:', error);
+        if (error.message?.includes('503') || error.status === 503 || error.error?.code === 503) {
+          // Special handling for Gemini 503 UNAVAILABLE
+          setMusicSearchResults([]);
+        }
+      } finally {
+        setIsSearchingMusic(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(handler);
+  }, [musicSearchTitle, musicSearchArtist, isMusicModalOpen]);
 
   const handleSaveScore = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,12 +255,17 @@ export default function ScoreLibrary() {
       }
       
       const finalUrls = [...existingUrls, ...uploadedUrls];
-        const scoreData: Partial<Score> = {
+        const scoreData: any = {
         title: newScoreTitle.trim(),
         description: newScoreDescription.trim(),
         fileData: finalUrls[0],
         files: finalUrls,
-        authorName: editingScore?.authorName || (editingScore?.authorId === 'admin' ? '관리자' : '헤이데이즈')
+        authorName: editingScore?.authorName || (editingScore?.authorId === 'admin' ? '관리자' : '헤이데이즈'),
+        // Explicitly clear music fields if none selected to avoid undefined in Firestore
+        musicVideoId: selectedMusic?.videoId || null,
+        musicTitle: selectedMusic?.title || null,
+        musicThumbnail: selectedMusic?.thumbnail || null,
+        artist: newScoreArtist.trim() || null
       };
 
       if (editingScore) {
@@ -231,24 +291,22 @@ export default function ScoreLibrary() {
         setScores(prev => [...prev, newScore]);
       }
       
-      // Reset and close
-      setIsUploading(false);
-      setEditingScore(null);
-      setNewScoreTitle('');
-      setNewScoreDescription('');
-      setScoreFileItems([]);
-      await loadScores();
     } catch (err: any) {
       console.error('Save failed:', err);
-      let errorMessage = '업로드 중 오류가 발생했습니다. ';
-      if (err.message?.includes('timed out')) {
-        errorMessage += '네트워크 지연으로 시간이 초과되었습니다.';
-      } else {
-        errorMessage += '네트워크 상태나 파일 크기를 확인해주세요.';
-      }
+      // Use the specific error message from the storage service if available
+      const errorMessage = err.message || '업로드 중 오류가 발생했습니다. 네트워크 상태나 파일 크기를 확인해주세요.';
       alert(errorMessage);
     } finally {
       setIsSaving(false);
+      setIsUploading(false);
+      setEditingScore(null);
+      setNewScoreTitle('');
+      setNewScoreArtist('');
+      setNewScoreDescription('');
+      setScoreFileItems([]);
+      setSelectedMusic(null);
+      setMusicSearchResults([]);
+      await loadScores();
     }
   };
 
@@ -311,15 +369,12 @@ export default function ScoreLibrary() {
             className="bg-white dark:bg-slate-900 px-4 py-3 md:px-6 md:py-4 rounded-xl md:rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm group hover:shadow-md transition-all relative overflow-hidden cursor-pointer"
           >
             <div className="flex items-center gap-3 md:gap-4">
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 text-xs flex-shrink-0">
-                {score.authorId === 'admin' ? (
-                  <AdminCrown size={18} />
-                ) : (
-                  <div className="w-full h-full rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center border border-indigo-100 dark:border-indigo-800 overflow-hidden shadow-inner uppercase">
-                    <UserAvatarDisplay userId={score.authorId} name="H" />
-                  </div>
-                )}
-              </div>
+              <UserAvatarDisplay 
+                userId={score.authorId} 
+                name={score.authorName} 
+                className="w-8 h-8 md:w-10 md:h-10 border-2 border-white dark:border-slate-800 shadow-sm flex-shrink-0"
+                size={20}
+              />
               
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-4">
@@ -385,21 +440,95 @@ export default function ScoreLibrary() {
                   <Upload size={24} className="text-indigo-600" />
                   {editingScore ? '악보 수정하기' : '새 악보 등록'}
                 </h2>
-                <button onClick={() => { setIsUploading(false); setEditingScore(null); setNewScoreTitle(''); setNewScoreDescription(''); setScoreFileItems([]); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors dark:text-slate-400">
+                <button onClick={() => { setIsUploading(false); setEditingScore(null); setNewScoreTitle(''); setNewScoreArtist(''); setNewScoreDescription(''); setScoreFileItems([]); setSelectedMusic(null); setMusicSearchResults([]); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors dark:text-slate-400">
                   <X size={24} />
                 </button>
               </div>
               
               <form onSubmit={handleSaveScore} className="space-y-6 overflow-y-auto pr-2 custom-scrollbar pb-4">
-                <div>
-                  <label className="block text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">제목</label>
-                  <input 
-                    value={newScoreTitle}
-                    onChange={(e) => setNewScoreTitle(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-black transition-all dark:text-white"
-                    placeholder="곡 제목 또는 악보 제목을 입력하세요"
-                    required
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">곡 제목</label>
+                    <input 
+                      value={newScoreTitle}
+                      onChange={(e) => setNewScoreTitle(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-black transition-all dark:text-white"
+                      placeholder="곡 제목을 입력하세요"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">아티스트</label>
+                    <input 
+                      value={newScoreArtist}
+                      onChange={(e) => setNewScoreArtist(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-black transition-all dark:text-white"
+                      placeholder="아티스트명 (선택)"
+                    />
+                  </div>
+                </div>
+
+                  {/* Music Search Feature Card */}
+                  <div className="space-y-4">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setMusicSearchTitle(newScoreTitle);
+                        setMusicSearchArtist(newScoreArtist);
+                        setIsMusicModalOpen(true);
+                      }}
+                      className="w-full group relative overflow-hidden bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border-2 border-slate-100 dark:border-slate-800 hover:border-red-500/50 hover:shadow-xl hover:shadow-red-500/5 transition-all text-left outline-none"
+                    >
+                      <div className="flex items-center gap-4 relative z-10">
+                        <div className="w-14 h-14 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center text-red-500 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500">
+                          <Youtube size={28} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base font-black dark:text-white uppercase tracking-tighter whitespace-nowrap group-hover:text-red-600 transition-colors">스마트 음악 검색</h3>
+                            <div className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full animate-pulse">AI</div>
+                          </div>
+                          <p className="text-[10px] font-bold text-slate-400 mt-1 dark:text-slate-500">유튜브 음악을 검색</p>
+                        </div>
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-slate-200 dark:text-slate-700 group-hover:text-red-500 group-hover:translate-x-1 transition-all">
+                          <ChevronRight size={24} />
+                        </div>
+                      </div>
+                      
+                      {/* Decorative Background Element */}
+                      <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-red-500/5 rounded-full blur-2xl group-hover:bg-red-500/10 transition-colors" />
+                    </button>
+
+                  {/* Selected Music Preview (Simplified) */}
+                  {selectedMusic && (
+                    <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-indigo-100 dark:border-indigo-900 shadow-sm flex items-center gap-4 animate-in fade-in zoom-in-95 duration-500">
+                      <img src={selectedMusic.thumbnail} alt={selectedMusic.title} className="w-24 aspect-video object-cover rounded-xl shadow-md" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[8px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded uppercase tracking-widest">Matched</span>
+                          <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 truncate">{selectedMusic.title}</p>
+                        </div>
+                        {selectedMusic.videoId && (
+                          <div className="mt-2 aspect-video w-full max-w-[200px] rounded-lg overflow-hidden border border-slate-100 dark:border-slate-800 bg-black">
+                            <iframe 
+                              width="100%" 
+                              height="100%" 
+                              src={`https://www.youtube.com/embed/${selectedMusic.videoId}?autoplay=0&controls=1`}
+                              frameBorder="0" 
+                              allowFullScreen
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setSelectedMusic(null)}
+                        className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -510,6 +639,145 @@ export default function ScoreLibrary() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Smart Music Search Modal */}
+      <AnimatePresence>
+        {isMusicModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xl"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[3rem] shadow-2xl p-8 border border-white/10 flex flex-col max-h-[85vh]"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center justify-center text-red-500">
+                    <Youtube size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black dark:text-white uppercase tracking-tight">음악 검색</h2>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Smart Matching System</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setIsMusicModalOpen(false); setMusicSearchResults([]); }}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-400"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">검색할 곡 제목</label>
+                      <input 
+                        value={musicSearchTitle}
+                        onChange={(e) => setMusicSearchTitle(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-red-500 font-bold dark:text-white"
+                        placeholder="예: 뚜두뚜두"
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">가수명 (선택)</label>
+                      <input 
+                        value={musicSearchArtist}
+                        onChange={(e) => setMusicSearchArtist(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl py-4 px-6 focus:ring-2 focus:ring-red-500 font-bold dark:text-white"
+                        placeholder="예: 블랙핑크"
+                      />
+                    </div>
+                  </div>
+                  
+                  {isSearchingMusic && (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                      <span className="ml-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Searching...</span>
+                    </div>
+                  )}
+                </div>
+
+                {musicSearchResults.length > 0 ? (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between px-1">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">검색 결과 (TOP 7)</p>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Instant Preview Active</span>
+                      </div>
+                    </div>
+                    {musicSearchResults.map((result) => (
+                      <div key={result.videoId} className="group relative">
+                        <button
+                          onClick={() => {
+                            setSelectedMusic(result);
+                            setIsMusicModalOpen(false);
+                            setMusicSearchResults([]);
+                          }}
+                          className="w-full flex items-center gap-4 p-3 bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-[2rem] hover:border-red-500/50 group transition-all text-left overflow-hidden pr-12"
+                        >
+                          <div className="relative w-24 aspect-video rounded-xl overflow-hidden shadow-md group-hover:scale-105 transition-transform bg-slate-100 dark:bg-slate-800">
+                            <img src={result.thumbnail} className="w-full h-full object-cover" alt="thumb" />
+                            <div className="absolute inset-0 bg-red-500/10 group-hover:bg-transparent transition-colors" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-black dark:text-white truncate group-hover:text-red-500 transition-colors uppercase tracking-tight">{result.title}</p>
+                            <div className="mt-2 flex items-center gap-1 text-red-500 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0">
+                              <span className="text-[8px] font-black uppercase tracking-widest">Select this song</span>
+                              <ChevronRight size={10} strokeWidth={3} />
+                            </div>
+                          </div>
+                        </button>
+                        
+                        {/* Instant Preview Play Button */}
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Implementation of Instant-Preview: Use a global preview player or just play it
+                            window.dispatchEvent(new CustomEvent('youtube-preview', { detail: { videoId: result.videoId } }));
+                          }}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center hover:bg-red-500 hover:scale-110 active:scale-95 transition-all shadow-lg z-10"
+                        >
+                          <Play size={14} fill="currentColor" />
+                        </button>
+                      </div>
+                    ))}
+                    
+                    {/* Hidden Preview Player for Modal */}
+                    <div className="hidden">
+                      <SmartYoutubePlayer 
+                        videoId="" 
+                        onReady={(player) => {
+                          window.addEventListener('youtube-preview', (e: any) => {
+                            player.loadVideoById(e.detail.videoId);
+                            player.playVideo();
+                          });
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  !isSearchingMusic && musicSearchTitle.trim() && musicSearchResults.length === 0 && (
+                    <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-3xl border-2 border-dashed border-slate-100 dark:border-slate-800">
+                      <Music size={32} className="mx-auto text-slate-300 mb-2" />
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4">
+                        검색 결과가 없거나 서비스가 일시적으로 지연 중입니다. 잠시 후 다시 시도해 주세요.
+                      </p>
+                    </div>
+                  )
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -549,9 +817,12 @@ function ScoreViewer({ score, isLiked, onToggleLike, onClose, onEdit, onDelete, 
         {/* Navigation & Metadata Header */}
         <div className="px-8 py-6 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
-              <Plus size={20} strokeWidth={3} />
-            </div>
+            <UserAvatarDisplay 
+              userId={score.authorId} 
+              name={score.authorName} 
+              className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-lg"
+              size={20}
+            />
             <div>
               <p className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] leading-none mb-1">Score Library</p>
               <p className="text-xs font-black text-slate-400 uppercase tracking-tight leading-none">Detail View</p>
@@ -594,17 +865,53 @@ function ScoreViewer({ score, isLiked, onToggleLike, onClose, onEdit, onDelete, 
                   BY {users[score.authorId]?.name || score.authorName}
                 </div>
               </div>
-              <h2 className="text-xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase">
-                {score.title}
-              </h2>
+              <div>
+                <h2 className="text-xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tighter leading-tight uppercase mb-1">
+                  {score.title}
+                </h2>
+                {score.artist && (
+                  <p className="text-lg font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{score.artist}</p>
+                )}
+              </div>
             </div>
+
+            {/* Smart Music Player Embedding */}
+            {score.musicVideoId && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-700 delay-200">
+                <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] border-l-4 border-red-500 pl-4 py-1 flex items-center gap-2">
+                  <Youtube size={16} className="text-red-500" />
+                  스마트 음악 연습 모드
+                </h3>
+                <SmartYoutubePlayer 
+                  videoId={score.musicVideoId} 
+                  title={score.musicTitle || score.title}
+                  isSticky={false}
+                  className="mb-8"
+                />
+              </div>
+            )}
 
             {score.description && (
               <div className="space-y-6">
-                <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] border-l-4 border-indigo-600 pl-4 py-1">상세 설명</h3>
+                <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] border-l-4 border-indigo-600 pl-4 py-1">상세 설명 & 타임스탬프</h3>
                 <div className="relative group">
                   <div className="text-slate-600 dark:text-slate-300 leading-[1.8] font-medium whitespace-pre-wrap text-lg min-h-[100px]">
-                    {score.description}
+                    {score.description.split(/(\d{1,2}:\d{2})/).map((part, i) => {
+                      if (/\d{1,2}:\d{2}/.test(part)) {
+                        const [min, sec] = part.split(':').map(Number);
+                        const seconds = min * 60 + sec;
+                        return (
+                          <button 
+                            key={i}
+                            onClick={() => window.dispatchEvent(new CustomEvent('youtube-seek', { detail: { seconds } }))}
+                            className="bg-red-500/10 text-red-500 px-2 py-0.5 rounded font-black hover:bg-red-500 hover:text-white transition-all mx-1"
+                          >
+                            {part}
+                          </button>
+                        );
+                      }
+                      return part;
+                    })}
                   </div>
 
                   {/* Interaction Stats */}
@@ -644,17 +951,14 @@ function ScoreViewer({ score, isLiked, onToggleLike, onClose, onEdit, onDelete, 
               </div>
             )}
 
-            <div className="mt-12 pt-8 flex justify-between items-center">
+            <div className="mt-12 pt-8 flex justify-between items-center pb-24">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 flex items-center justify-center font-black text-xs overflow-visible">
-                  {score.authorId === 'admin' ? (
-                    <AdminCrown size={20} />
-                  ) : (
-                    <div className="w-full h-full rounded-full bg-slate-900 dark:bg-slate-800 flex items-center justify-center text-white overflow-hidden border border-slate-700">
-                      <UserAvatarDisplay userId={score.authorId} name="H" />
-                    </div>
-                  )}
-                </div>
+                <UserAvatarDisplay 
+                  userId={score.authorId} 
+                  name={users[score.authorId]?.name || score.authorName} 
+                  className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm"
+                  size={20}
+                />
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Author</p>
                   <p className="text-sm font-black text-slate-900 dark:text-white leading-none flex items-center gap-1">
@@ -667,7 +971,7 @@ function ScoreViewer({ score, isLiked, onToggleLike, onClose, onEdit, onDelete, 
               <div className="flex items-center gap-2">
                 <button 
                   onClick={onClose}
-                  className="px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-lg"
+                  className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-900 transition-all shadow-lg"
                 >
                   닫기
                 </button>
@@ -675,6 +979,16 @@ function ScoreViewer({ score, isLiked, onToggleLike, onClose, onEdit, onDelete, 
             </div>
           </div>
         </div>
+
+        {/* Sticky Professional Player Bar (Bottom of Modal) */}
+        {score.musicVideoId && (
+          <SmartYoutubePlayer 
+            videoId={score.musicVideoId} 
+            title={score.musicTitle || score.title}
+            isSticky={true} 
+            className="pointer-events-auto"
+          />
+        )}
       </motion.div>
     </motion.div>
   );

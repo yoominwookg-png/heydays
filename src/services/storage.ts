@@ -144,6 +144,16 @@ export const StorageService = {
     }
   },
 
+  async heartbeat(userId: string) {
+    try {
+      // Use direct updateDoc for efficiency
+      await updateDoc(doc(db, 'users', userId), { lastActiveAt: Date.now() });
+    } catch (error) {
+      // Slently fail to avoid UI noise during heartbeats
+      console.warn("Heartbeat update failed:", error);
+    }
+  },
+
   // Auth - Handled by AuthProvider and Firebase Auth directly
   getAuth(): User | null {
     return null; // AuthProvider handles this
@@ -494,29 +504,39 @@ export const StorageService = {
   async uploadFile(path: string, file: File | Blob, compressionOptions?: { maxWidthOrHeight?: number; maxSizeMB?: number; quality?: number }): Promise<string> {
     const { compressImage } = await import('../lib/imageCompression');
     
-    // Create a timeout promise - Increased to 20s for large files
+    // Hard limit for any file before processing to prevent browser crashes (e.g., 20MB)
+    const ABSOLUTE_MAX_BEFORE_PROCESSING = 20 * 1024 * 1024;
+    if (file.size > ABSOLUTE_MAX_BEFORE_PROCESSING) {
+      throw new Error(`파일 용량이 너무 큽니다 (${(file.size / (1024 * 1024)).toFixed(1)}MB). 전체 용량을 1MB 이하로 압축하여 올려주세요.`);
+    }
+
+    // Create a timeout promise
     const timeout = (ms: number) => new Promise((_, reject) => 
       setTimeout(() => reject(new Error('업로드 시간이 초과되었습니다 (20초). 네트워크 상태를 확인해주세요.')), ms)
     );
 
     const uploadLogic = async () => {
-      // Auto-compress if it's an image File/Blob
       let uploadFile = file;
-      if (file.type.startsWith('image/')) {
+      const isImage = file.type.startsWith('image/');
+
+      if (isImage) {
         try {
-          // Pass target size if defined, otherwise defaults to 0.6MB
-          const compressed = await compressImage(file as File, compressionOptions);
+          // Mandatory high-efficiency compression for ALL images
+          const options = compressionOptions || { 
+            maxWidthOrHeight: 1200, 
+            maxSizeMB: 0.8, // Aim for 0.8MB to be safe for 1MB Firestore limit
+            quality: 0.75 
+          };
+          const compressed = await compressImage(file as File, options);
           if (compressed) uploadFile = compressed;
         } catch (err) {
-          console.warn('Compression failed or skipped:', err);
+          console.warn('Compression failed:', err);
         }
       }
 
-      // Check size AFTER compression
-      // Firestore Document hard limit is 1,048,487 bytes total including overhead
-      const LIMIT = 1000 * 1024; // 1000KB (1MB)
+      const LIMIT = 1024 * 1024; // 1MB STRICT LIMIT
       if (uploadFile.size > LIMIT) {
-        throw new Error(`이미지 압축 후에도 용량이 1MB를 초과합니다 (${(uploadFile.size / 1024).toFixed(0)}KB). 훨씬 더 작은 해상도의 사진이나 다른 형식의 파일을 선택해주세요.`);
+        throw new Error(`파일 용량이 1MB를 초과합니다 (${(uploadFile.size / 1024).toFixed(0)}KB). 악보/이미지는 자동 압축되지만, 원본이 너무 크면 실패할 수 있습니다. 이미지를 더 작게 줄여주세요.`);
       }
 
       try {
@@ -525,7 +545,7 @@ export const StorageService = {
         
         // Final sanity check for Firestore Document limit (1MB)
         if (base64Data.length > 1024 * 1024) {
-          throw new Error('전송 데이터가 1MB를 초과했습니다. 더 작은 이미지를 선택해주세요.');
+          throw new Error('전송 데이터가 1MB를 초과했습니다. 더 작은 파일을 선택해주세요.');
         }
 
         // Store in attachments collection
@@ -541,7 +561,7 @@ export const StorageService = {
 
         return `firestore://attachments/${attachmentId}`;
       } catch (error: any) {
-        if (error.message && (error.message.includes('image') || error.message.includes('데이터'))) throw error;
+        if (error.message && (error.message.includes('압축') || error.message.includes('데이터') || error.message.includes('용량'))) throw error;
         
         // Improved error detection for ProgressEvent (FileReader)
         if (error && (error instanceof ProgressEvent || (error as any).toString().includes('ProgressEvent'))) {

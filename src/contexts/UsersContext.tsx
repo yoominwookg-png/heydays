@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '../types';
 import { StorageService } from '../services/storage';
 import { useAuth } from '../services/auth';
+import { collection, onSnapshot, query } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface UsersContextType {
   users: Record<string, User>;
@@ -15,25 +17,35 @@ export const UsersProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [users, setUsers] = useState<Record<string, User>>({});
 
   const refreshUsers = async () => {
-    if (!user) return;
-    try {
-      const fetchedUsers = await StorageService.getUsers();
-      const numUsers = fetchedUsers.reduce((acc, user) => {
-        acc[user.id] = user;
-        return acc;
-      }, {} as Record<string, User>);
-      setUsers(numUsers);
-    } catch (error) {
-      console.error('Failed to fetch users:', error);
-    }
+    // Manual refresh fallback
+    const fetchedUsers = await StorageService.getUsers();
+    const mapped = fetchedUsers.reduce((acc, u) => {
+      acc[u.id] = u;
+      return acc;
+    }, {} as Record<string, User>);
+    setUsers(mapped);
   };
 
   useEffect(() => {
-    if (user && !authLoading) {
-      refreshUsers();
-    } else if (!user && !authLoading) {
+    if (!user || authLoading) {
       setUsers({});
+      return;
     }
+
+    // Real-time listener for all users
+    const q = query(collection(db, 'users'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const mapped = snapshot.docs.reduce((acc, doc) => {
+        const data = doc.data() as User;
+        acc[data.id] = data;
+        return acc;
+      }, {} as Record<string, User>);
+      setUsers(mapped);
+    }, (error) => {
+      console.error('Real-time users fetch failed:', error);
+    });
+
+    return () => unsubscribe();
   }, [user, authLoading]);
 
   return (

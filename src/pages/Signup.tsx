@@ -73,13 +73,19 @@ export default function Signup() {
       navigate('/notices');
     } catch (err: any) {
       console.error('Signup error:', err);
-      if (err.code === 'auth/email-already-in-use') {
+      const errorCode = err.code || '';
+      const errorMessage = err.message || '';
+      
+      if (errorCode === 'auth/email-already-in-use' || errorMessage.includes('email-already-in-use')) {
         setError('이미 사용 중인 아이디입니다.');
-      } else if (err.code === 'auth/weak-password') {
+      } else if (errorCode === 'auth/weak-password' || errorMessage.includes('weak-password')) {
         setError('비밀번호는 4자리 이상이어야 합니다.');
+      } else if (errorCode === 'auth/invalid-email' || errorMessage.includes('invalid-email')) {
+        setError('유효하지 않은 형식의 아이디입니다.');
       } else {
-        setError(`회원가입 중 오류가 발생했습니다 (${err.code || err.message}).`);
+        setError(`회원가입 중 오류가 발생했습니다 (${errorCode || errorMessage}).`);
       }
+    } finally {
       setIsLoading(false);
     }
   };
@@ -102,7 +108,7 @@ export default function Signup() {
         <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] p-6 text-white">
           <div className="mb-4 text-center">
             <h1 className="text-2xl font-black mb-1 tracking-tighter">헤이데이즈 가입하기</h1>
-            <p className="text-[11px] text-white/70 font-medium tracking-tight">헤이데이즈의 새로운 맴버가 되주세요</p>
+            <p className="text-[11px] text-white/70 font-medium tracking-tight">헤이데이즈의 새로운 멤버가 되어주세요</p>
           </div>
 
           <form onSubmit={handleSignup} className="space-y-3">

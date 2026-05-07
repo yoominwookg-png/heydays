@@ -32,6 +32,7 @@ import { useUsersContext } from '../contexts/UsersContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Moon } from 'lucide-react';
 import { AdminCrown } from '../components/AdminCrown';
+import { UserAvatarDisplay } from '../components/UserAvatarDisplay';
 
 export default function Settings() {
   const { user } = useAuth();
@@ -103,11 +104,14 @@ export default function Settings() {
         avatarUrl = await StorageService.uploadFile(path, avatarFile, { maxWidthOrHeight: 400, maxSizeMB: 0.1, quality: 0.6 });
       }
 
+      const updatedAvatarUrl = avatarUrl;
       await StorageService.updateUser(user.id, { 
         name: trimmedName, 
         bio: editBio,
-        avatar: avatarUrl
+        avatar: updatedAvatarUrl
       });
+      setAvatar(updatedAvatarUrl);
+      setAvatarFile(null);
       await refreshUsers();
       alert('프로필이 수정되었습니다.');
     } catch (error) {
@@ -250,17 +254,13 @@ export default function Settings() {
               <form onSubmit={handleUpdateProfile} className="space-y-4">
                 <div className="flex flex-col items-center mb-6">
                   <div className="relative group">
-                    <div 
-                      className="w-24 h-24 rounded-[2rem] bg-indigo-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 flex items-center justify-center overflow-visible transition-all group-hover:border-indigo-600 group-hover:shadow-xl group-hover:shadow-indigo-600/10"
-                    >
-                      {user?.role === UserRole.ADMIN ? (
-                        <AdminCrown size={48} />
-                      ) : avatar ? (
-                        <img src={avatar} alt="Profile" className="w-full h-full object-cover rounded-[2rem]" />
-                      ) : (
-                        <UserIcon size={32} className="text-slate-300 dark:text-slate-500" />
-                      )}
-                    </div>
+                    <UserAvatarDisplay 
+                      userId={user?.id || ''} 
+                      name={user?.name || ''} 
+                      avatarOverride={avatar}
+                      className="w-24 h-24 border-4 border-slate-100 dark:border-slate-800 shadow-xl group-hover:border-indigo-600 transition-all cursor-pointer"
+                      size={48}
+                    />
                     <label className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-2 rounded-xl shadow-lg group-hover:scale-110 transition-transform cursor-pointer hover:bg-indigo-700">
                       <Camera size={14} strokeWidth={3} />
                       <input
@@ -342,19 +342,12 @@ export default function Settings() {
               </div>
 
               <div className="flex items-center gap-3 p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl mb-6">
-                <div className="w-10 h-10 flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 overflow-visible">
-                  {selectedUser.avatar ? (
-                    <div className="w-full h-full rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
-                      <img src={selectedUser.avatar} alt={selectedUser.name} className="w-full h-full object-cover" />
-                    </div>
-                  ) : selectedUser.role === UserRole.ADMIN ? (
-                    <AdminCrown size={20} />
-                  ) : (
-                    <div className="w-full h-full rounded-full bg-white dark:bg-slate-800 flex items-center justify-center">
-                      {selectedUser.name.charAt(0)}
-                    </div>
-                  )}
-                </div>
+                <UserAvatarDisplay 
+                  userId={selectedUser.id} 
+                  name={selectedUser.name} 
+                  className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm"
+                  size={20}
+                />
                 <div>
                   <p className="text-xs font-bold text-indigo-400">받는 사람</p>
                   <p className="font-black text-indigo-900 dark:text-white">{selectedUser.name}</p>

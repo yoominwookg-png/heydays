@@ -73,14 +73,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               await signOut(auth);
               setUser(null);
               setIsLoading(false);
-              return;
-            } else {
-              await signOut(auth);
-              setUser(null);
-              setIsLoading(false);
-              alert('관리자에 의해 삭제된 계정입니다. (24시간 내에 관리자가 취소할 수 있습니다)');
+              alert('탈퇴 처리가 완료된 계정입니다.');
               return;
             }
+            // If within 24h, we let them login but UI will handle the warning
           }
           
           setUser(userData);

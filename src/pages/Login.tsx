@@ -34,18 +34,29 @@ export default function Login() {
       await loginWithId(id, password);
       navigate('/notices');
     } catch (err: any) {
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      const errorCode = err.code || '';
+      const errorMessage = err.message || '';
+      
+      const isCredentialError = errorCode === 'auth/user-not-found' || 
+                               errorCode === 'auth/wrong-password' || 
+                               errorCode === 'auth/invalid-credential' ||
+                               errorMessage.includes('user-not-found') ||
+                               errorMessage.includes('wrong-password') ||
+                               errorMessage.includes('invalid-credential');
+
+      if (isCredentialError) {
         const isMsg = id.toLowerCase() === 'admin' 
           ? '관리자 아이디/비밀번호가 틀렸거나, 파이어베이스 패스워드 정책(최소 6자)과 충돌이 있을 수 있습니다. "Signup" 페이지에서 새 계정을 만들어보세요.'
           : '아이디 또는 비밀번호가 올바르지 않습니다.';
         setError(isMsg);
-      } else if (err.code === 'auth/invalid-email') {
+      } else if (errorCode === 'auth/invalid-email' || errorMessage.includes('invalid-email')) {
         setError('올바른 아이디 형식이 아닙니다.');
-      } else if (err.code === 'auth/operation-not-allowed') {
+      } else if (errorCode === 'auth/operation-not-allowed' || errorMessage.includes('operation-not-allowed')) {
         setError('파이어베이스 콘솔에서 "Email/Password" 로그인이 활성화되지 않았습니다. [Authentication > Sign-in method] 메뉴에서 활성화해 주세요.');
       } else {
-        setError('로그인 중 오류가 발생했습니다. (Firebase 설정을 확인해주세요)');
+        setError(`로그인 중 오류가 발생했습니다 (${errorCode || errorMessage}).`);
       }
+    } finally {
       setIsLoading(false);
     }
   };

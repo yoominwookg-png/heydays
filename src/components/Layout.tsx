@@ -27,13 +27,19 @@ import {
   Timer,
   Shield,
   MessageSquare,
-  Trash2
+  Trash2,
+  Users2
 } from 'lucide-react';
 import { useAuth } from '../services/auth';
 import { cn, formatDate } from '../lib/utils';
-import { UserRole, Notification as AppNotification } from '../types';
+import { UserRole, Notification as AppNotification, User } from '../types';
 import { StorageService } from '../services/storage';
 import { AdminCrown } from './AdminCrown';
+import { UserAvatarDisplay } from './UserAvatarDisplay';
+import { ChatModal } from './ChatModal';
+import { ChatService } from '../services/chatService';
+import { collection, onSnapshot, query } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -71,8 +77,16 @@ export default function Layout() {
     setShowDeletionNotice(false);
   };
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [activeMemberCount, setActiveMemberCount] = useState<number>(0);
+  const [activeUsers, setActiveUsers] = useState<User[]>([]);
+  const [isMembersListOpen, setIsMembersListOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifToDelete, setNotifToDelete] = useState<AppNotification | null>(null);
+  
+  // Chat state
+  const [activeChatRoomId, setActiveChatRoomId] = useState<string | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -86,6 +100,51 @@ export default function Layout() {
     }
   }, [user]);
 
+  useEffect(() => {
+    // Heartbeat logic
+    if (user) {
+      // Initial heartbeat
+      StorageService.heartbeat(user.id);
+      
+      // Periodic heartbeat every 2 minutes
+      const interval = setInterval(() => {
+        StorageService.heartbeat(user.id);
+      }, 2 * 60 * 1000); // 2 minutes
+      
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    // Real-time active member count and list
+    // We fetch all users but filter for "last seen" within 5 minutes
+    const q = query(collection(db, 'users'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+      
+      const active = snapshot.docs
+        .map(doc => doc.data() as User)
+        .filter(data => 
+          !data.deletedAt && 
+          data.lastActiveAt && 
+          data.lastActiveAt > fiveMinutesAgo
+        )
+        // Sort by admin first, then name
+        .sort((a, b) => {
+          if (a.role === UserRole.ADMIN && b.role !== UserRole.ADMIN) return -1;
+          if (a.role !== UserRole.ADMIN && b.role === UserRole.ADMIN) return 1;
+          return a.name.localeCompare(b.name);
+        });
+      
+      setActiveUsers(active);
+      setActiveMemberCount(active.length);
+    }, (error) => {
+      console.error("Error fetching live member count:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -98,6 +157,21 @@ export default function Layout() {
       await StorageService.markNotificationsRead(user.id);
       const data = await StorageService.getNotifications(user.id);
       setNotifications(data);
+    }
+  };
+
+  const openChatWithMember = async (targetUserId: string) => {
+    if (!user) return;
+    const targetUser = activeUsers.find(u => u.id === targetUserId);
+    if (!targetUser) return;
+    
+    try {
+      const roomId = await ChatService.getOrCreateDirectChat(user.id, user.name, targetUserId, targetUser.name);
+      setActiveChatRoomId(roomId);
+      setIsChatOpen(true);
+      setIsMembersListOpen(false);
+    } catch (error) {
+      console.error('Failed to open chat:', error);
     }
   };
 
@@ -123,7 +197,7 @@ export default function Layout() {
 
   const extraItems = [
     { name: '내 쪽지함', path: '/messages', icon: MessageSquare },
-    { name: 'HAYDAYS MEMBERS', path: '/members', icon: Users },
+    { name: 'HEYDAYS MEMBERS', path: '/members', icon: Users },
   ];
 
   const adminItems = [
@@ -154,10 +228,10 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100">
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 z-40 flex items-center justify-between px-4">
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 z-40 flex items-center justify-between px-4">
         <button 
           onClick={() => navigate('/notices')}
-          className="flex flex-col ml-2 mt-3 text-left"
+          className="flex flex-col ml-1 text-left"
         >
           <motion.span 
             animate={user?.role === UserRole.ADMIN ? {
@@ -170,46 +244,99 @@ export default function Layout() {
             } : {}}
             transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
             className={cn(
-              "font-black text-lg tracking-tighter leading-none dark:text-white",
+              "font-black text-base tracking-tighter leading-none dark:text-white",
               user?.role === UserRole.ADMIN && "text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#B38728]"
             )}
           >HEYDAYS</motion.span>
-          <span className="text-[8px] font-bold text-blue-500 tracking-[0.2em] mt-0.5 uppercase">Community</span>
+          <span className="text-[7px] font-bold text-blue-500 tracking-[0.2em] uppercase">Community</span>
         </button>
-        <div className="flex items-center gap-1 mt-1">
+        <div className="flex items-center gap-0">
+          {/* Active Members Counter */}
+          <button 
+            onClick={() => setIsMembersListOpen(!isMembersListOpen)}
+            className="flex items-center gap-1 px-2 py-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-full border border-emerald-100 dark:border-emerald-800/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+          >
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+            </span>
+            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+              <Users2 size={9} className="mb-0.5" />
+              {activeMemberCount}
+            </span>
+          </button>
+
           <button 
             onClick={() => { setIsNotifOpen(!isNotifOpen); markRead(); }}
-            className="p-3 text-slate-500 hover:text-indigo-600 transition-colors relative flex items-center justify-center font-bold"
+            className="p-1.5 text-slate-500 hover:text-indigo-600 transition-colors relative flex items-center justify-center font-bold"
           >
-            <Bell size={24} />
+            <Bell size={18} />
             {unreadCount > 0 && (
-              <span className="absolute top-2.5 right-2.5 w-4 h-4 bg-red-500 text-white text-[10px] font-black flex items-center justify-center rounded-full border-2 border-white dark:border-slate-900">
+              <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-red-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border-2 border-white dark:border-slate-900">
                 {unreadCount}
               </span>
             )}
           </button>
           <button 
             onClick={() => setIsSidebarOpen(true)}
-            className="p-1 pr-3 flex items-center gap-2 group"
+            className="p-1.5 text-slate-500 hover:text-indigo-600 transition-colors"
           >
-            <div className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center transition-all",
-              user?.role === UserRole.ADMIN 
-                ? "bg-transparent border-0 overflow-visible" 
-                : "bg-indigo-100 dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 overflow-hidden group-hover:ring-2 group-hover:ring-indigo-600/30"
-            )}>
-              {user?.role === UserRole.ADMIN ? (
-                <AdminCrown size={28} className="drop-shadow-[0_2px_2px_rgba(0,0,0,0.3)]" />
-              ) : user?.avatar ? (
-                <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-              ) : (
-                <UserIcon className="text-indigo-600 dark:text-indigo-400" size={16} />
-              )}
-            </div>
-            <Menu size={24} className="text-slate-500 group-hover:text-indigo-600 transition-colors" />
+            <Menu size={20} />
           </button>
         </div>
       </header>
+
+      {/* Active Members Dropdown */}
+      <AnimatePresence>
+        {isMembersListOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMembersListOpen(false)}
+              className="fixed inset-0 z-[60] bg-slate-900/10 backdrop-blur-[2px]"
+            />
+            <motion.div 
+              initial={{ opacity: 0, y: -10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              className="fixed top-14 right-4 w-48 bg-white dark:bg-slate-900 rounded-[1.5rem] shadow-2xl border border-slate-100 dark:border-slate-800 z-[70] overflow-hidden"
+            >
+              <div className="p-4 border-b border-slate-50 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="font-black text-sm tracking-tight">활동 멤버</h3>
+                <button onClick={() => setIsMembersListOpen(false)} className="p-1 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                {activeUsers.map(u => (
+                  <button 
+                    key={u.id}
+                    onClick={() => openChatWithMember(u.id)}
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl border border-transparent hover:bg-slate-50 dark:hover:bg-slate-800 transition-all group"
+                  >
+                    <UserAvatarDisplay 
+                      userId={u.id} 
+                      name={u.name} 
+                      className="w-7 h-7 border border-slate-100 dark:border-slate-800 shadow-sm"
+                      size={14}
+                    />
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="text-[11px] font-bold truncate dark:text-white flex items-center gap-1">
+                        {u.name}
+                        {u.role === UserRole.ADMIN && <AdminCrown size={8} />}
+                        {u.id === user?.id && <span className="text-[8px] bg-slate-100 dark:bg-slate-700 px-1 rounded text-slate-400">ME</span>}
+                      </p>
+                      <p className="text-[9px] text-emerald-500 font-bold leading-none mt-0.5">Online</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Notifications Dropdown */}
       <AnimatePresence>
@@ -392,22 +519,13 @@ export default function Layout() {
 
           {/* User Profile - Compact horizontal layout */}
           <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
-            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2 flex items-center gap-3">
-              <div 
-                className={cn(
-                  "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
-                  user?.role === UserRole.ADMIN 
-                    ? "bg-transparent border-0 overflow-visible"
-                    : "bg-indigo-100 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 overflow-hidden"
-              )}>
-                {user?.role === UserRole.ADMIN ? (
-                  <AdminCrown size={24} />
-                ) : user?.avatar ? (
-                  <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-                ) : (
-                  <UserIcon className="text-indigo-600 dark:text-indigo-400" size={18} />
-                )}
-              </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-[2rem] p-2 flex items-center gap-3 border border-slate-100 dark:border-slate-800">
+              <UserAvatarDisplay 
+                userId={user?.id || ''} 
+                name={user?.name || ''} 
+                className="w-10 h-10 border-2 border-white dark:border-slate-700 shadow-sm"
+                size={20}
+              />
               
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm truncate dark:text-white flex items-center gap-1">
@@ -415,7 +533,7 @@ export default function Layout() {
                   {user?.role === UserRole.ADMIN && <AdminCrown size={12} />}
                 </div>
                 <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  HEYDAYS MEMBER
+                  HEYDAYS MEMBERS
                 </p>
               </div>
 
@@ -483,7 +601,7 @@ export default function Layout() {
               <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Shield size={32} />
               </div>
-              <h3 className="text-xl font-black mb-2 text-slate-900 dark:text-white">탈퇴 요청 취소 안내</h3>
+              <h3 className="text-xl font-black mb-2 text-slate-900 dark:text-white">탈퇴가 진행중입니다</h3>
               <p className="text-slate-500 dark:text-slate-400 font-medium mb-8">현재 계정 탈퇴가 신청된 상태입니다.<br />삭제 요청을 취소하시겠습니까?</p>
               
               <div className="flex flex-col gap-3">
@@ -502,6 +620,17 @@ export default function Layout() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isChatOpen && activeChatRoomId && (
+          <ChatModal 
+            roomId={activeChatRoomId}
+            isOpen={isChatOpen}
+            onClose={() => setIsChatOpen(false)}
+            activeUsers={activeUsers.map(u => ({ id: u.id, name: u.name }))}
+          />
         )}
       </AnimatePresence>
 

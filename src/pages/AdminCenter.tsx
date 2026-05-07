@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Send,
   AlertTriangle,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  UserCheck
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import { useAuth } from '../services/auth';
@@ -20,6 +21,10 @@ import { User, Notification, UserRole } from '../types';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { ChatStorageModal } from '../components/ChatStorageModal';
+import { FolderClock } from 'lucide-react';
 
 export default function AdminCenter() {
   const { user } = useAuth();
@@ -30,18 +35,32 @@ export default function AdminCenter() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isChatStorageOpen, setIsChatStorageOpen] = useState(false);
 
   useEffect(() => {
     if (user?.role !== UserRole.ADMIN) {
       if (user) navigate('/');
       return;
     }
-    const fetchUsers = async () => {
-      const allUsers = await StorageService.getUsers();
+    
+    // Real-time listener for users to sync active member count
+    const q = query(collection(db, 'users'), orderBy('name'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const allUsers = snapshot.docs.map(doc => doc.data() as User);
       setUsers(allUsers);
-    };
-    fetchUsers();
+    }, (error) => {
+      console.error("Error fetching real-time users:", error);
+    });
+
+    return () => unsubscribe();
   }, [user, navigate]);
+
+  const allActiveUsers = users.filter(u => !u.deletedAt);
+  const onlineCount = allActiveUsers.filter(u => {
+    if (!u.lastActiveAt) return false;
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+    return u.lastActiveAt > fiveMinutesAgo;
+  }).length;
 
   const handleSyncCommentCounts = async () => {
     if (confirm('모든 게시글의 댓글 수를 실제 데이터와 대조하여 동기화하시겠습니까? 데이터가 많을 경우 시간이 걸릴 수 있습니다.')) {
@@ -108,11 +127,24 @@ export default function AdminCenter() {
             </h3>
             
             <div className="space-y-4">
-              <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">총 회원 수</p>
+              <div className="p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-3xl">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-black text-emerald-600 uppercase tracking-widest">접속 중인 회원</p>
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                </div>
                 <div className="flex items-end gap-2">
-                  <p className="text-3xl font-black text-slate-900 dark:text-white">{users.length}</p>
-                  <p className="text-sm font-bold text-slate-400 mb-1">명</p>
+                  <p className="text-3xl font-black text-emerald-700 dark:text-emerald-400">{onlineCount}</p>
+                  <p className="text-sm font-bold text-emerald-600/60 mb-1">명 (실시간 접속)</p>
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">전체 회원 수</p>
+                </div>
+                <div className="flex items-end gap-2">
+                  <p className="text-3xl font-black text-slate-900 dark:text-white">{allActiveUsers.length}</p>
+                  <p className="text-sm font-bold text-slate-400 mb-1">명 (전체 활동 멤버)</p>
                 </div>
               </div>
               
@@ -142,15 +174,27 @@ export default function AdminCenter() {
                   <p className="font-black text-indigo-950 dark:text-white text-sm">데이터 관리</p>
                 </button>
                 <button 
+                  onClick={() => setIsChatStorageOpen(true)}
+                  className="p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl group hover:bg-slate-100 transition-colors text-left"
+                >
+                  <FolderClock className="text-indigo-600 dark:text-indigo-400 mb-3" size={20} />
+                  <p className="font-black text-slate-800 dark:text-white text-sm">대화창 저장</p>
+                </button>
+                <button 
                   onClick={() => navigate('/settings')}
                   className="p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl group hover:bg-slate-100 transition-colors text-left"
                 >
-                  <SettingsIcon className="text-slate-400 mb-3" size={20} />
+                  <Users className="text-slate-400 mb-3" size={20} />
                   <p className="font-black text-slate-800 dark:text-white text-sm">회원 리스트</p>
                 </button>
               </div>
             </div>
           </div>
+
+          <ChatStorageModal 
+            isOpen={isChatStorageOpen} 
+            onClose={() => setIsChatStorageOpen(false)} 
+          />
 
           <div className="p-8 bg-red-50 dark:bg-red-900/10 rounded-[2.5rem] border border-red-100 dark:border-red-900/20">
             <div className="flex items-center gap-3 text-red-600 dark:text-red-400 font-black mb-4">

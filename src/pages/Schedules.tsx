@@ -24,7 +24,8 @@ import {
   Crown,
   FileText,
   Download,
-  Heart
+  Heart,
+  Send
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import { useAuth } from '../services/auth';
@@ -149,6 +150,13 @@ export default function Schedules() {
         setSchedules(prev => [newSchedule, ...prev]);
       }
 
+    } catch (err: any) {
+      console.error('Submit failed:', err);
+      // Use the specific error message from the storage service if available
+      const errorMessage = err.message || '저장에 실패했습니다. 네트워크 상태를 확인해주세요.';
+      alert(errorMessage);
+    } finally {
+      setIsUploading(false);
       setIsAdding(false);
       setEditingSchedule(null);
       setTitle('');
@@ -157,17 +165,6 @@ export default function Schedules() {
       setMapQuery('');
       setDescription('');
       setFileItems([]);
-    } catch (err: any) {
-      console.error('Submit failed:', err);
-      let errorMessage = '저장에 실패했습니다. ';
-      if (err.message?.includes('timed out')) {
-        errorMessage += '네트워크 지연으로 시간이 초과되었습니다.';
-      } else {
-        errorMessage += '네트워크 상태를 확인해주세요.';
-      }
-      alert(errorMessage);
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -629,9 +626,12 @@ export default function Schedules() {
               {/* Navigation & Metadata Header */}
               <div className="px-8 py-6 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
-                    <CalendarIcon size={20} strokeWidth={3} />
-                  </div>
+                  <UserAvatarDisplay 
+                    userId={selectedSchedule.authorId} 
+                    name={selectedSchedule.authorId === 'admin' ? '관리자' : '헤이데이즈'} 
+                    className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-lg"
+                    size={20}
+                  />
                   <div>
                     <p className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] leading-none mb-1">Performance</p>
                     <p className="text-xs font-black text-slate-400 uppercase tracking-tight leading-none">Detail Schedule</p>
@@ -746,15 +746,12 @@ export default function Schedules() {
 
                   <div className="mt-12 pt-8 flex justify-between items-center">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 flex items-center justify-center font-black text-xs overflow-visible">
-                        {selectedSchedule.authorId === 'admin' ? (
-                          <AdminCrown size={20} />
-                        ) : (
-                          <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center text-white overflow-hidden">
-                            H
-                          </div>
-                        )}
-                      </div>
+                      <UserAvatarDisplay 
+                        userId={selectedSchedule.authorId} 
+                        name={selectedSchedule.authorId === 'admin' ? '관리자' : '헤이데이즈'} 
+                        className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm"
+                        size={20}
+                      />
                       <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Author</p>
                         <p className="text-sm font-black text-slate-900 dark:text-white leading-none flex items-center gap-1">
@@ -908,9 +905,12 @@ const CommentSection = ({ schedule, onEdit, onDelete, onShowBio }: {
         {comments.map((comment) => (
           <div key={comment.id} className="flex justify-between items-start group/comment bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-2xl text-left">
             <div className="flex gap-3 text-left">
-              <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/20 flex items-center justify-center flex-shrink-0 overflow-hidden font-black text-indigo-600 dark:text-indigo-400 text-[10px]">
-                <UserAvatarDisplay userId={comment.authorId} name={comment.authorName} />
-              </div>
+              <UserAvatarDisplay 
+                userId={comment.authorId} 
+                name={comment.authorName} 
+                className="w-9 h-9 border-2 border-white dark:border-slate-700 shadow-sm"
+                size={16}
+              />
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <button 
@@ -933,14 +933,20 @@ const CommentSection = ({ schedule, onEdit, onDelete, onShowBio }: {
         ))}
       </div>
 
-      <form onSubmit={handleAddComment}>
+      <form onSubmit={handleAddComment} className="relative group/input">
         <input 
           value={newComment}
           onChange={(e) => setNewComment(e.target.value)}
-          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
+          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
           placeholder="댓글을 입력하세요..."
           required
         />
+        <button 
+          type="submit"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+        >
+          <Send size={18} />
+        </button>
       </form>
 
       <AnimatePresence>

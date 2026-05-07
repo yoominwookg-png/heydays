@@ -19,6 +19,9 @@ import { formatDate, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import UserBioModal from '../components/UserBioModal';
 import { AdminCrown } from '../components/AdminCrown';
+import { UserAvatarDisplay } from '../components/UserAvatarDisplay';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export default function Members() {
   const { user } = useAuth();
@@ -31,13 +34,16 @@ export default function Members() {
   const [activeTab, setActiveTab] = useState<'active' | 'deleted'>('active');
 
   useEffect(() => {
-    const fetchUsers = async () => {
-      const allUsers = await StorageService.getUsers();
-      // Sort by join date (earliest joiners first)
-      const sortedUsers = [...allUsers].sort((a, b) => a.createdAt - b.createdAt);
-      setUsers(sortedUsers);
-    };
-    fetchUsers();
+    // Use real-time listener for users
+    const q = query(collection(db, 'users'), orderBy('name'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const allUsers = snapshot.docs.map(doc => doc.data() as User);
+      setUsers(allUsers);
+    }, (error) => {
+      console.error("Error fetching live members:", error);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -92,12 +98,29 @@ export default function Members() {
     }
   });
 
+  const getIsOnline = (u: User) => {
+    if (!u.lastActiveAt) return false;
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+    return u.lastActiveAt > fiveMinutesAgo;
+  };
+
+  const onlineCount = users.filter(u => !u.deletedAt && getIsOnline(u)).length;
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-black tracking-tighter mb-2 dark:text-white uppercase">HayDays Members</h1>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">헤이데이즈를 함께 만들어가는 멤버들</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-4xl font-black tracking-tighter mb-2 dark:text-white uppercase">HayDays Members</h1>
+            <p className="text-slate-500 dark:text-slate-400 font-medium">헤이데이즈를 함께 만들어가는 멤버들</p>
+          </div>
+          <div className="bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-2xl flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{onlineCount} Online</span>
+          </div>
         </div>
         
         <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700">
@@ -165,15 +188,12 @@ export default function Members() {
                 <div className="flex items-center gap-4">
                   {u.role !== UserRole.ADMIN ? (
                     <div className="relative">
-                      <div className={cn(
-                        "w-12 h-12 rounded-2xl flex items-center justify-center font-black transition-all bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 overflow-hidden"
-                      )}>
-                        {u.avatar ? (
-                          <img src={u.avatar} alt={u.name} className="w-full h-full object-cover" />
-                        ) : (
-                          u.name.charAt(0)
-                        )}
-                      </div>
+                      <UserAvatarDisplay 
+                        userId={u.id} 
+                        name={u.name} 
+                        className="w-12 h-12 border-2 border-white dark:border-slate-800 shadow-sm"
+                        size={24}
+                      />
                       {isDeleted && (
                         <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center">
                           <UserMinus size={8} className="text-white" />
@@ -188,9 +208,19 @@ export default function Members() {
                   <div>
                     <div className="flex items-center gap-1.5">
                       <p className={cn("font-black tracking-tight dark:text-white", isDeleted && "line-through text-slate-500", u.role === UserRole.ADMIN && "text-indigo-600 dark:text-indigo-400")}>{u.name}</p>
+                      {getIsOnline(u) && !isDeleted && (
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+                      )}
                     </div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      {isDeleted ? '탈퇴 신청됨' : u.role === UserRole.ADMIN ? 'ADMINISTRATOR' : 'MEMBER'}
+                    <p className={cn(
+                      "text-[10px] font-bold uppercase tracking-widest",
+                      (isDeleted && user?.role === UserRole.ADMIN) 
+                        ? "text-red-500 dark:text-red-400 animate-pulse" 
+                        : "text-slate-400 dark:text-slate-500"
+                    )}>
+                      {isDeleted && user?.role === UserRole.ADMIN 
+                        ? '탈퇴 진행중' 
+                        : (u.role === UserRole.ADMIN ? 'ADMINISTRATOR' : 'MEMBER')}
                     </p>
                   </div>
                 </div>
@@ -261,17 +291,20 @@ export default function Members() {
                 </div>
               </div>
 
-              <form onSubmit={handleSendMessage} className="space-y-6">
+              <form onSubmit={handleSendMessage} className="relative">
                 <textarea 
                   value={messageContent}
                   onChange={(e) => setMessageContent(e.target.value)}
                   autoFocus
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-3xl py-5 px-6 focus:outline-none focus:ring-4 focus:ring-indigo-600/10 min-h-[180px] font-medium dark:text-white text-sm"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-3xl py-5 px-6 pr-14 focus:outline-none focus:ring-4 focus:ring-indigo-600/10 min-h-[180px] font-medium dark:text-white text-sm"
                   placeholder="보내고 싶은 내용을 입력해 주세요..."
                   required
                 />
-                <button className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
-                  보내기
+                <button 
+                  type="submit"
+                  className="absolute bottom-6 right-6 p-2 text-indigo-600 hover:text-indigo-700 transition-colors bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800"
+                >
+                  <Send size={20} />
                 </button>
               </form>
             </motion.div>

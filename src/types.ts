@@ -17,6 +17,7 @@ export interface User {
   password?: string;
   createdAt: number;
   deletedAt?: number;
+  lastActiveAt?: number;
 }
 
 export enum PostType {
@@ -68,10 +69,14 @@ export interface Schedule {
 export interface Score {
   id: string;
   title: string;
+  artist?: string;
   description?: string;
   fileData?: string; // base64 or placeholder
   files?: string[]; // Multiple Base64 images/files
   fileType: 'pdf' | 'jpg' | 'png';
+  musicVideoId?: string;
+  musicThumbnail?: string;
+  musicTitle?: string;
   likes?: number;
   views?: number;
   commentCount?: number;
@@ -103,6 +108,32 @@ export interface Message {
   content: string;
   createdAt: number;
   isRead: boolean;
+}
+
+export interface ChatRoom {
+  id: string;
+  participants: string[]; // User IDs
+  participantNames?: string[]; // Display names for admin list
+  activeParticipants?: string[]; // Currently active user IDs
+  status?: 'active' | 'ended';
+  lastMessage?: string;
+  updatedAt: number;
+  createdAt: number;
+  endedAt?: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  roomId: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+  fileUrl?: string;
+  imageUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  previewUrl?: string;
+  createdAt: number;
 }
 
 export interface Notification {

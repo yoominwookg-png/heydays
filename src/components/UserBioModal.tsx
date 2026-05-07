@@ -34,9 +34,12 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
 
   const executePermanentDelete = async () => {
     if (!user) return;
-    await StorageService.permanentlyDeleteAccount(user.id);
-    setShowConfirmPermanentDelete(false);
-    onClose(); // Close modal since user is destroyed
+    if (confirm('바로 진행 하시겠습니까?')) {
+      await StorageService.permanentlyDeleteAccount(user.id);
+      alert('탈퇴가 완료되었습니다.');
+      setShowConfirmPermanentDelete(false);
+      onClose(); // Close modal since user is destroyed
+    }
   };
 
   const handleRestore = async () => {
@@ -103,10 +106,10 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
                 </div>
 
                 <div className="flex items-center gap-3 p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl mb-6 relative overflow-hidden">
-                  {isDeleted && (
+                  {isDeleted && isAdmin && (
                     <div className="absolute inset-0 bg-red-500/10 flex items-center justify-end pr-4 pointer-events-none">
                       <span className="text-red-500 font-bold text-xs uppercase tracking-wider bg-red-500/10 px-2 py-1 rounded">
-                        삭제 예정 (24시간 내)
+                        탈퇴 진행중 (24시간 유예)
                       </span>
                     </div>
                   )}
@@ -135,7 +138,7 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
 
                 <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-2xl min-h-[120px] border border-slate-100 dark:border-slate-700">
                   <p className="text-slate-700 dark:text-slate-300 font-medium whitespace-pre-wrap leading-relaxed">
-                    {user.bio || '자기소개가 없습니다.'}
+                    {isDeleted ? '탈퇴한 회원입니다.' : (user.bio || '자기소개가 없습니다.')}
                   </p>
                 </div>
 
@@ -158,7 +161,7 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
                           className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-600 dark:bg-red-500/10 dark:text-red-400 rounded-xl font-bold hover:bg-red-200 dark:hover:bg-red-500/20 transition-colors text-sm"
                         >
                           <Trash2 size={16} />
-                          바로 삭제
+                          바로 탈퇴
                         </button>
                         <button 
                           onClick={handleRestore}
@@ -174,7 +177,7 @@ export default function UserBioModal({ user: initialUser, onClose }: UserBioModa
                         className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-600 dark:bg-red-500/10 dark:text-red-400 rounded-xl font-bold hover:bg-red-200 dark:hover:bg-red-500/20 transition-colors text-sm"
                       >
                         <Trash2 size={16} />
-                        회원 삭제
+                        회원 탈퇴
                       </button>
                     )}
                   </div>

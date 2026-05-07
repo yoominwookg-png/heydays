@@ -20,6 +20,7 @@ import { useNavigate } from 'react-router-dom';
 import { StorageService } from '../services/storage';
 import { Post, Schedule, Score, PostType } from '../types';
 import { formatDate, cn } from '../lib/utils';
+import { UserAvatarDisplay } from '../components/UserAvatarDisplay';
 
 export default function Dashboard() {
   const [notices, setNotices] = useState<Post[]>([]);
@@ -91,19 +92,19 @@ export default function Dashboard() {
         <section>
           <SectionHeader title="헤이데이즈 공지" icon={Bell} path="/notices" />
           <div className="space-y-4">
-            {notices.map((notice, idx) => (
+            {notices.map((notice) => (
               <motion.div 
                 key={notice.id}
                 whileHover={{ y: -4 }}
                 className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center gap-4 group"
                 onClick={() => navigate(`/notices/${notice.id}`)}
               >
-                <div className={cn(
-                  "w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg",
-                  idx === 0 ? "bg-red-50 text-red-500" : "bg-slate-50 text-slate-400"
-                )}>
-                  {idx + 1}
-                </div>
+                <UserAvatarDisplay 
+                  userId={notice.authorId} 
+                  name={notice.authorName} 
+                  className="w-12 h-12 border-2 border-white shadow-sm flex-shrink-0"
+                  size={24}
+                />
                 <div className="flex-1">
                   <h3 className="font-bold text-lg group-hover:text-indigo-600 transition-colors">{notice.title}</h3>
                   <p className="text-sm text-slate-400 flex items-center gap-2 mt-1">

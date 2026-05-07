@@ -216,11 +216,12 @@ export default function Board({ type, title }: BoardProps) {
           {comments.map((comment) => (
             <div key={comment.id} className="flex justify-between items-start group/comment bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-2xl">
               <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 w-full h-full flex items-center justify-center">
-                        <UserAvatarDisplay userId={comment.authorId} name={comment.authorName} />
-                      </span>
-                    </div>
+                    <UserAvatarDisplay 
+                      userId={comment.authorId} 
+                      name={comment.authorName} 
+                      className="w-9 h-9 border-2 border-white dark:border-slate-700 shadow-sm"
+                      size={16}
+                    />
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <button 
@@ -248,14 +249,20 @@ export default function Board({ type, title }: BoardProps) {
           {comments.length === 0 && <p className="text-center text-slate-400 dark:text-slate-600 py-4 font-medium text-sm">첫 번째 댓글을 남겨보세요!</p>}
         </div>
 
-        <form onSubmit={handleAddComment} className="space-y-3">
+        <form onSubmit={handleAddComment} className="relative group/input">
           <input 
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
-            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 font-medium dark:text-white"
             placeholder="댓글을 입력하세요..."
             required
           />
+          <button 
+            type="submit"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+          >
+            <Send size={18} />
+          </button>
         </form>
       </div>
     );
@@ -356,27 +363,18 @@ export default function Board({ type, title }: BoardProps) {
           }
         }
         
-        setIsEditorOpen(false);
-        setEditingPost(null);
-        await loadPosts();
-        
-      } catch (err: any) {
-        console.error('Submit failed:', err);
-        let errorMessage = '업로드 중 오류가 발생했습니다. ';
-        
-        if (err.message?.includes('timed out')) {
-          errorMessage += '네트워크 연결이 지연되어 업로드 시간이 초과되었습니다.';
-        } else if (err.message?.includes('permission-denied') || err.message?.includes('insufficient permissions')) {
-          errorMessage += '권한이 없습니다.';
-        } else {
-          errorMessage += '네트워크 상태나 파일 크기(각 파일당 0.3MB 권장)를 확인해주세요.';
-        }
-        
-        alert(errorMessage);
-      } finally {
-        setIsUploading(false);
-      }
-    };
+    } catch (err: any) {
+      console.error('Submit failed:', err);
+      // Use the specific error message from the storage service if available
+      const errorMessage = err.message || '업로드 중 오류가 발생했습니다. 네트워크 상태나 파일 크기를 확인해주세요.';
+      alert(errorMessage);
+    } finally {
+      setIsUploading(false);
+      setIsEditorOpen(false);
+      setEditingPost(null);
+      await loadPosts();
+    }
+  };
 
     return (
       <motion.div 
@@ -580,11 +578,12 @@ export default function Board({ type, title }: BoardProps) {
             )}
           >
             <div className="flex items-center gap-3 md:gap-4">
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center font-black text-indigo-600 dark:text-indigo-400 text-xs flex-shrink-0">
-                <div className="w-full h-full rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center border border-indigo-100 dark:border-indigo-800 overflow-hidden shadow-inner">
-                  <UserAvatarDisplay userId={post.authorId} name={post.authorName} />
-                </div>
-              </div>
+              <UserAvatarDisplay 
+                userId={post.authorId} 
+                name={post.authorName} 
+                className="w-8 h-8 md:w-10 md:h-10 border-2 border-white dark:border-slate-800 shadow-sm flex-shrink-0"
+                size={20}
+              />
               
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-4">
@@ -733,9 +732,12 @@ export default function Board({ type, title }: BoardProps) {
               {/* Navigation & Metadata Header */}
               <div className="px-8 py-6 flex items-center justify-between sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
-                    <Pin size={20} strokeWidth={3} />
-                  </div>
+                  <UserAvatarDisplay 
+                    userId={selectedPost.authorId} 
+                    name={selectedPost.authorName} 
+                    className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-lg"
+                    size={20}
+                  />
                   <div>
                     <p className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] leading-none mb-1">{title.substring(0, 10)}</p>
                     <p className="text-xs font-black text-slate-400 uppercase tracking-tight leading-none">Detail View</p>
