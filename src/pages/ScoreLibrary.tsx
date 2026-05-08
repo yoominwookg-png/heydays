@@ -756,8 +756,12 @@ export default function ScoreLibrary() {
                         videoId="" 
                         onReady={(player) => {
                           window.addEventListener('youtube-preview', (e: any) => {
-                            player.loadVideoById(e.detail.videoId);
-                            player.playVideo();
+                            if (player && typeof player.loadVideoById === 'function') {
+                              player.loadVideoById(e.detail.videoId);
+                              if (typeof player.playVideo === 'function') {
+                                player.playVideo();
+                              }
+                            }
                           });
                         }}
                       />

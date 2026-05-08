@@ -1,11 +1,45 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-dark-bg: #0f172a;
   --color-dark-card: #1e293b;
   --color-dark-border: #334155;
   --color-dark-text: #f8fafc;
   --color-dark-muted: #94a3b8;
+  
+  /* Semantic Variables Linked to CSS Variables */
+  --color-surface: var(--surface);
+  --color-on-surface: var(--on-surface);
+  --color-surface-card: var(--surface-card);
+  --color-ui-border: var(--ui-border);
+}
+
+@layer base {
+  :root {
+    --surface: #ffffff;
+    --on-surface: #0f172a;
+    --surface-card: #f8fafc;
+    --ui-border: #e2e8f0;
+    
+    color-scheme: light;
+  }
+
+  .dark {
+    --surface: #020617;
+    --on-surface: #f8fafc;
+    --surface-card: #0f172a;
+    --ui-border: #1e293b;
+    
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--surface);
+    color: var(--on-surface);
+    @apply transition-colors duration-300;
+  }
 }
 
 @layer components {
@@ -23,11 +57,5 @@
 
   .message-gold .message-content {
     @apply text-amber-900 dark:text-amber-100;
-  }
-}
-
-@layer base {
-  .dark body {
-    @apply bg-slate-950 text-slate-50;
   }
 }

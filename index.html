@@ -1,11 +1,27 @@
 <!doctype html>
-<html lang="ko" class="notranslate dark" translate="no">
+<html lang="ko" class="notranslate" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google" content="notranslate" />
     <meta name="naver-site-verification" content="5769e6b6ac6a1243b538cd8bcbfa33ecf234c5eb" />
     <title>헤이데이즈 (HEYDAYS)</title>
+    <script>
+      (function() {
+        try {
+          var theme = localStorage.getItem('heydays_theme');
+          var supportDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches === true;
+          if (!theme && supportDarkMode) theme = 'dark';
+          if (!theme) theme = 'light';
+          
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body class="notranslate" translate="no">
     <div id="root"></div>

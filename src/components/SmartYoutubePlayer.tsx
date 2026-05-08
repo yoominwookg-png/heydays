@@ -96,17 +96,28 @@ export const SmartYoutubePlayer: React.FC<SmartYoutubePlayerProps> = ({
 
   const togglePlay = () => {
     if (!playerRef.current) return;
-    if (isPlaying) {
-      playerRef.current.pauseVideo();
-    } else {
-      playerRef.current.playVideo();
+    try {
+      if (isPlaying && typeof playerRef.current.pauseVideo === 'function') {
+        playerRef.current.pauseVideo();
+      } else if (!isPlaying && typeof playerRef.current.playVideo === 'function') {
+        playerRef.current.playVideo();
+      }
+    } catch (e) {
+      console.warn("Player action failed:", e);
     }
   };
 
   const seekTo = (seconds: number) => {
-    if (playerRef.current && playerRef.current.seekTo) {
-      playerRef.current.seekTo(seconds, true);
-      playerRef.current.playVideo();
+    if (!playerRef.current) return;
+    try {
+      if (typeof playerRef.current.seekTo === 'function') {
+        playerRef.current.seekTo(seconds, true);
+        if (typeof playerRef.current.playVideo === 'function') {
+          playerRef.current.playVideo();
+        }
+      }
+    } catch (e) {
+      console.warn("Seek action failed:", e);
     }
   };
 
@@ -168,13 +179,21 @@ export const SmartYoutubePlayer: React.FC<SmartYoutubePlayerProps> = ({
 
           <div className="flex items-center gap-2">
             <button 
-              onClick={() => playerRef.current?.seekTo(playerRef.current.getCurrentTime() - 10)}
+              onClick={() => {
+                if (playerRef.current && typeof playerRef.current.seekTo === 'function' && typeof playerRef.current.getCurrentTime === 'function') {
+                  playerRef.current.seekTo(playerRef.current.getCurrentTime() - 10);
+                }
+              }}
               className="p-2 text-slate-400 hover:text-white transition-colors"
             >
               <RotateCcw size={18} />
             </button>
             <button 
-              onClick={() => playerRef.current?.seekTo(playerRef.current.getCurrentTime() + 10)}
+              onClick={() => {
+                if (playerRef.current && typeof playerRef.current.seekTo === 'function' && typeof playerRef.current.getCurrentTime === 'function') {
+                  playerRef.current.seekTo(playerRef.current.getCurrentTime() + 10);
+                }
+              }}
               className="p-2 text-slate-400 hover:text-white transition-colors"
             >
               <FastForward size={18} />

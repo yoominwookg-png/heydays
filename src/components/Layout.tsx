@@ -226,7 +226,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex font-sans text-slate-900 dark:text-slate-100">
+    <div className="min-h-screen bg-surface flex font-sans text-on-surface">
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 z-40 flex items-center justify-between px-4">
         <button 

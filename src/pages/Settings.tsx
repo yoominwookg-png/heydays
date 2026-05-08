@@ -35,6 +35,7 @@ import { AdminCrown } from '../components/AdminCrown';
 import { UserAvatarDisplay } from '../components/UserAvatarDisplay';
 
 export default function Settings() {
+  const { isDarkMode, toggleDarkMode } = useTheme();
   const { user } = useAuth();
   const { refreshUsers } = useUsersContext();
   const [users, setUsers] = useState<User[]>([]);
@@ -312,7 +313,53 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Display Settings - Removed as dark mode is forced */}
+        {/* Display Settings */}
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 h-full">
+            <h3 className="text-xl font-black mb-6 flex items-center gap-3">
+              <Sun className="text-indigo-600 dark:text-indigo-400" size={24} /> 화면 테마
+            </h3>
+            
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">
+              사용자의 취향에 맞춰 밝은 테마 또는 어두운 테마를 선택할 수 있습니다. 
+              기본적으로 시스템 설정과 동기화됩니다.
+            </p>
+
+            <button 
+              onClick={toggleDarkMode}
+              className="w-full group relative overflow-hidden bg-slate-50 dark:bg-slate-800 p-6 rounded-3xl border border-slate-100 dark:border-slate-700 hover:border-indigo-600 transition-all text-left"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white dark:bg-slate-900 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                    {isDarkMode ? (
+                      <Moon className="text-indigo-400" size={24} />
+                    ) : (
+                      <Sun className="text-amber-500" size={24} />
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-black dark:text-white uppercase tracking-tight">
+                      {isDarkMode ? '다크 모드 활성화됨' : '라이트 모드 활성화됨'}
+                    </p>
+                    <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-0.5">
+                      클릭하여 테마 변경
+                    </p>
+                  </div>
+                </div>
+                <div className={cn(
+                  "w-12 h-6 rounded-full p-1 transition-colors duration-300",
+                  isDarkMode ? "bg-indigo-600" : "bg-slate-300"
+                )}>
+                  <div className={cn(
+                    "w-4 h-4 bg-white rounded-full transition-transform duration-300",
+                    isDarkMode ? "translate-x-6" : "translate-x-0"
+                  )} />
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
 
       </div>
 
