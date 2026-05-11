@@ -46,7 +46,7 @@ export const UsersProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     return () => unsubscribe();
-  }, [user, authLoading]);
+  }, [user?.id, authLoading]);
 
   return (
     <UsersContext.Provider value={{ users, refreshUsers }}>

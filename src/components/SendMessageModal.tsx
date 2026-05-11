@@ -14,7 +14,7 @@ import { cn } from '../lib/utils';
 interface SendMessageModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSent: () => void;
+  onSent?: () => void;
   initialRecipientId?: string;
 }
 
@@ -77,7 +77,7 @@ export default function SendMessageModal({ isOpen, onClose, onSent, initialRecip
       };
       await StorageService.addNotification(newNotification);
 
-      onSent();
+      if (onSent) onSent();
       setContent('');
       setSelectedRecipient(null);
       onClose();

@@ -112,9 +112,9 @@ export interface Message {
 
 export interface ChatRoom {
   id: string;
-  participants: string[]; // User IDs
-  participantNames?: string[]; // Display names for admin list
-  activeParticipants?: string[]; // Currently active user IDs
+  participants: string[]; // User IDs (Those who have explicitly joined)
+  participantNames?: string[]; // Display names
+  activeParticipants?: string[]; // Currently active user IDs (those who haven't "ended" or went offline)
   status?: 'active' | 'ended';
   lastMessage?: string;
   updatedAt: number;
@@ -125,9 +125,10 @@ export interface ChatRoom {
 export interface ChatMessage {
   id: string;
   roomId: string;
-  senderId: string;
+  senderId: string; // 'system' for exit/join messages
   senderName: string;
   content: string;
+  type?: 'text' | 'system';
   fileUrl?: string;
   imageUrl?: string;
   fileName?: string;
@@ -141,7 +142,12 @@ export interface Notification {
   userId: string; // 'all' for broadcast
   title: string;
   content: string;
-  type: 'notice' | 'admin' | 'message';
+  type: 'notice' | 'admin' | 'message' | 'chat_invite';
+  meta?: {
+    roomId?: string;
+    inviterId?: string;
+    inviterName?: string;
+  };
   createdAt: number;
   isRead: boolean;
 }

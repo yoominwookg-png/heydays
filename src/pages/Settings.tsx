@@ -54,6 +54,7 @@ export default function Settings() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updatingMessage, setUpdatingMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'deleted'>('active');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -61,7 +62,7 @@ export default function Settings() {
       setEditBio(user.bio || '');
       setAvatar(user.avatar);
     }
-  }, [user]);
+  }, [user?.id, user?.name, user?.bio, user?.avatar]);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -101,20 +102,20 @@ export default function Settings() {
         if (user.avatar && user.avatar.startsWith('firestore://')) {
           await StorageService.deleteFile(user.avatar);
         }
-        const path = `avatars/${user.id}/${Date.now()}_${avatarFile.name}`;
-        avatarUrl = await StorageService.uploadFile(path, avatarFile, { maxWidthOrHeight: 400, maxSizeMB: 0.1, quality: 0.6 });
+        const path = `avatars/${user.id}/${Date.now()}`;
+        avatarUrl = await StorageService.uploadFile(path, avatarFile, { maxWidthOrHeight: 400, maxSizeMB: 0.1, quality: 0.8 });
       }
 
-      const updatedAvatarUrl = avatarUrl;
       await StorageService.updateUser(user.id, { 
         name: trimmedName, 
         bio: editBio,
-        avatar: updatedAvatarUrl
+        avatar: avatarUrl
       });
-      setAvatar(updatedAvatarUrl);
+      
+      setAvatar(avatarUrl);
       setAvatarFile(null);
       await refreshUsers();
-      alert('프로필이 수정되었습니다.');
+      setShowSuccessModal(true);
     } catch (error) {
       console.error(error);
       alert('프로필 수정 중 오류가 발생했습니다.');
@@ -157,7 +158,7 @@ export default function Settings() {
       }
     };
     fetchData();
-  }, [user]);
+  }, [user?.id]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -490,6 +491,39 @@ export default function Settings() {
                   예
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Modal */}
+      <AnimatePresence>
+        {showSuccessModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 text-center shadow-2xl"
+            >
+              <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm">
+                <Shield size={40} strokeWidth={2.5} />
+              </div>
+              <h3 className="text-2xl font-black mb-2 text-slate-900 dark:text-white tracking-tight">수정 완료</h3>
+              <p className="text-slate-500 dark:text-slate-400 font-medium mb-8">
+                프로필 정보가 성공적으로<br />업데이트 되었습니다.
+              </p>
+              
+              <button 
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 uppercase tracking-tighter"
+              >
+                확인
+              </button>
             </motion.div>
           </motion.div>
         )}

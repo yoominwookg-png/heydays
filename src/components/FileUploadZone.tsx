@@ -33,8 +33,14 @@ export default function FileUploadZone({
 
     setIsProcessing(true);
     try {
+      const MAX_PRE_PROCESS_SIZE = 50 * 1024 * 1024; // 50MB
+      
       const processedFiles = await Promise.all(
         (selectedFiles as File[]).map(async (file) => {
+          if (file.size > MAX_PRE_PROCESS_SIZE) {
+            throw new Error(`파일 '${file.name}'이 너무 큽니다 (${(file.size / (1024 * 1024)).toFixed(1)}MB). 50MB 이하의 파일만 업로드할 수 있습니다.`);
+          }
+          
           let processedFile = file;
           // 압축은 이미지 파일에만 적용
           if (file.type.startsWith('image/')) {
@@ -47,9 +53,9 @@ export default function FileUploadZone({
         })
       );
       onAdd(processedFiles);
-    } catch (error) {
+    } catch (error: any) {
       console.error('File processing failed:', error);
-      alert('파일 처리 중 오류가 발생했습니다.');
+      alert(error.message || '파일 처리 중 오류가 발생했습니다.');
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) {

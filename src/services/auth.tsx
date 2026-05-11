@@ -14,7 +14,7 @@ import {
   createUserWithEmailAndPassword,
   browserPopupRedirectResolver
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { User, UserRole } from '../types';
 import { StorageService } from './storage';
@@ -31,6 +31,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -51,66 +52,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
         await checkSessionExpiry();
-        
-        if (!auth.currentUser) {
-          setUser(null);
-          setIsLoading(false);
-          return;
-        }
-
-        // Fetch user data from Firestore
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as User;
-          
-          if (userData.deletedAt) {
-            const now = Date.now();
-            const twentyFourHours = 24 * 60 * 60 * 1000;
-            if (now > userData.deletedAt + twentyFourHours) {
-              await signOut(auth);
-              setUser(null);
-              setIsLoading(false);
-              alert('탈퇴 처리가 완료된 계정입니다.');
-              return;
-            }
-            // If within 24h, we let them login but UI will handle the warning
-          }
-          
-          setUser(userData);
-        } else {
-          // If profile doesn't exist, ONLY create it if we are not in the middle of a manual signup
-          // This prevents race conditions where signupWithId is still working
-          const isAdmin = firebaseUser.email === 'admin@heydays.com';
-          const newUser: User = {
-            id: firebaseUser.uid,
-            name: isAdmin ? '관리자' : (firebaseUser.displayName || 'Unnamed Member'),
-            avatar: firebaseUser.photoURL || '',
-            role: isAdmin ? UserRole.ADMIN : UserRole.MEMBER,
-            createdAt: Date.now(),
-          };
-          
-          const isGoogleSignUp = firebaseUser.providerData.some(p => p.providerId === 'google.com');
-          if (isGoogleSignUp) {
-            try {
-              await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-            } catch (e) {
-              console.error('Failed to auto-create user doc for google user', e);
-            }
-          }
-          
-          setUser(newUser);
-        }
-      } else {
-        setUser(null);
       }
-      setIsLoading(false);
+      setFirebaseUser(fbUser);
+      if (!fbUser) {
+        setUser(null);
+        setIsLoading(false);
+      }
     });
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    setIsLoading(true);
+    const userDocRef = doc(db, 'users', firebaseUser.uid);
+    
+    const unsubscribe = onSnapshot(userDocRef, (userDoc) => {
+      if (userDoc.exists()) {
+        const userData = userDoc.data() as User;
+        
+        if (userData.deletedAt) {
+          const now = Date.now();
+          const twentyFourHours = 24 * 60 * 60 * 1000;
+          if (now > userData.deletedAt + twentyFourHours) {
+            signOut(auth);
+            setUser(null);
+            setIsLoading(false);
+            alert('탈퇴 처리가 완료된 계정입니다.');
+            return;
+          }
+        }
+        
+        setUser(userData);
+      } else {
+        const isAdmin = firebaseUser.email === 'admin@heydays.com';
+        const newUser: User = {
+          id: firebaseUser.uid,
+          name: isAdmin ? '관리자' : (firebaseUser.displayName || 'Unnamed Member'),
+          avatar: firebaseUser.photoURL || '',
+          role: isAdmin ? UserRole.ADMIN : UserRole.MEMBER,
+          createdAt: Date.now(),
+        };
+        
+        const isGoogleSignUp = firebaseUser.providerData.some(p => p.providerId === 'google.com');
+        if (isGoogleSignUp) {
+          setDoc(userDocRef, newUser).catch(e => {
+            console.error('Failed to auto-create user doc for google user', e);
+          });
+        }
+        
+        setUser(newUser);
+      }
+      setIsLoading(false);
+    }, (error) => {
+      console.error("User doc listener error:", error);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [firebaseUser?.uid]);
 
   const loginWithGoogle = async () => {
     try {

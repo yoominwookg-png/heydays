@@ -47,7 +47,7 @@ import { FirestoreFileLink } from '../components/FirestoreFileLink';
 import ImageGallery from '../components/ImageGallery';
 import { AdminCrown } from '../components/AdminCrown';
 
-import { SmartYoutubePlayer } from '../components/SmartYoutubePlayer';
+import { HeydaysPracticePlayer } from '../components/SmartYoutubePlayer';
 
 const isImageFile = (url: string) => {
   return url.match(/\.(jpeg|jpg|gif|png|webp)(?:_|\?|%3F|$)/i) !== null;
@@ -137,8 +137,22 @@ export default function ScoreLibrary() {
   const [newScoreDescription, setNewScoreDescription] = useState('');
   const [scoreFileItems, setScoreFileItems] = useState<{file?: File, url: string}[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [youtubeId, setYoutubeId] = useState<string | null>(null);
 
-  // Music Search Modal States
+  // Helper to extract YouTube ID
+  const extractYoutubeId = (url: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  useEffect(() => {
+    const id = extractYoutubeId(youtubeUrl);
+    setYoutubeId(id);
+  }, [youtubeUrl]);
+
+  // Music Search Modal States (Legacy - will be phased out for the URL input)
   const [isMusicModalOpen, setIsMusicModalOpen] = useState(false);
   const [musicSearchTitle, setMusicSearchTitle] = useState('');
   const [musicSearchArtist, setMusicSearchArtist] = useState('');
@@ -183,6 +197,7 @@ export default function ScoreLibrary() {
     setNewScoreDescription(score.description || '');
     setScoreFileItems(score.files?.map(url => ({ url })) || []);
     if (score.musicVideoId) {
+      setYoutubeUrl(`https://www.youtube.com/watch?v=${score.musicVideoId}`);
       setSelectedMusic({
         videoId: score.musicVideoId,
         title: score.musicTitle || '',
@@ -190,6 +205,7 @@ export default function ScoreLibrary() {
         artist: score.artist
       });
     } else {
+      setYoutubeUrl('');
       setSelectedMusic(null);
     }
     setIsUploading(true);
@@ -262,9 +278,9 @@ export default function ScoreLibrary() {
         files: finalUrls,
         authorName: editingScore?.authorName || (editingScore?.authorId === 'admin' ? '관리자' : '헤이데이즈'),
         // Explicitly clear music fields if none selected to avoid undefined in Firestore
-        musicVideoId: selectedMusic?.videoId || null,
-        musicTitle: selectedMusic?.title || null,
-        musicThumbnail: selectedMusic?.thumbnail || null,
+        musicVideoId: youtubeId || null,
+        musicTitle: newScoreTitle.trim(),
+        musicThumbnail: youtubeId ? `https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg` : null,
         artist: newScoreArtist.trim() || null
       };
 
@@ -304,6 +320,8 @@ export default function ScoreLibrary() {
       setNewScoreArtist('');
       setNewScoreDescription('');
       setScoreFileItems([]);
+      setYoutubeUrl('');
+      setYoutubeId(null);
       setSelectedMusic(null);
       setMusicSearchResults([]);
       await loadScores();
@@ -468,67 +486,60 @@ export default function ScoreLibrary() {
                   </div>
                 </div>
 
-                  {/* Music Search Feature Card */}
-                  <div className="space-y-4">
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        setMusicSearchTitle(newScoreTitle);
-                        setMusicSearchArtist(newScoreArtist);
-                        setIsMusicModalOpen(true);
-                      }}
-                      className="w-full group relative overflow-hidden bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border-2 border-slate-100 dark:border-slate-800 hover:border-red-500/50 hover:shadow-xl hover:shadow-red-500/5 transition-all text-left outline-none"
-                    >
-                      <div className="flex items-center gap-4 relative z-10">
-                        <div className="w-14 h-14 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center text-red-500 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500">
-                          <Youtube size={28} />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-black dark:text-white uppercase tracking-tighter whitespace-nowrap group-hover:text-red-600 transition-colors">스마트 음악 검색</h3>
-                            <div className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full animate-pulse">AI</div>
-                          </div>
-                          <p className="text-[10px] font-bold text-slate-400 mt-1 dark:text-slate-500">유튜브 음악을 검색</p>
-                        </div>
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-slate-200 dark:text-slate-700 group-hover:text-red-500 group-hover:translate-x-1 transition-all">
-                          <ChevronRight size={24} />
-                        </div>
+                {/* YouTube Link Integration */}
+                <div className="space-y-4">
+                  <div className="bg-[#030303] p-6 rounded-[2.5rem] border-2 border-slate-100 dark:border-white/5 space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center text-red-500">
+                        <Youtube size={24} />
                       </div>
-                      
-                      {/* Decorative Background Element */}
-                      <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-red-500/5 rounded-full blur-2xl group-hover:bg-red-500/10 transition-colors" />
-                    </button>
-
-                  {/* Selected Music Preview (Simplified) */}
-                  {selectedMusic && (
-                    <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-indigo-100 dark:border-indigo-900 shadow-sm flex items-center gap-4 animate-in fade-in zoom-in-95 duration-500">
-                      <img src={selectedMusic.thumbnail} alt={selectedMusic.title} className="w-24 aspect-video object-cover rounded-xl shadow-md" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[8px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded uppercase tracking-widest">Matched</span>
-                          <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 truncate">{selectedMusic.title}</p>
-                        </div>
-                        {selectedMusic.videoId && (
-                          <div className="mt-2 aspect-video w-full max-w-[200px] rounded-lg overflow-hidden border border-slate-100 dark:border-slate-800 bg-black">
-                            <iframe 
-                              width="100%" 
-                              height="100%" 
-                              src={`https://www.youtube.com/embed/${selectedMusic.videoId}?autoplay=0&controls=1`}
-                              frameBorder="0" 
-                              allowFullScreen
-                            />
-                          </div>
-                        )}
+                      <div className="flex-1">
+                        <h3 className="text-sm font-black dark:text-white uppercase tracking-tight">유튜브 음악 연동</h3>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">영상 링크를 입력하면 끝!</p>
                       </div>
-                      <button 
-                        type="button"
-                        onClick={() => setSelectedMusic(null)}
-                        className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                      >
-                        <X size={18} />
-                      </button>
                     </div>
-                  )}
+
+                    <div className="space-y-2">
+                      <input 
+                        value={youtubeUrl}
+                        onChange={(e) => setYoutubeUrl(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:ring-2 focus:ring-red-500/50 font-medium text-white transition-all text-sm"
+                        placeholder="https://www.youtube.com/watch?v=..."
+                      />
+                      {youtubeUrl && !youtubeId && (
+                        <p className="text-[10px] font-black text-red-500 uppercase tracking-widest px-2 animate-pulse">
+                          ⚠️ 올바른 유튜브 주소를 입력해주세요
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Integrated Preview Player */}
+                    <AnimatePresence>
+                      {youtubeId && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          className="space-y-3"
+                        >
+                          <div className="flex items-center justify-between px-2">
+                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">실시간 프리뷰 재생</span>
+                             <div className="flex items-center gap-1.5">
+                               <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                               <span className="text-[8px] font-black text-green-500 uppercase tracking-widest">Ready to play</span>
+                             </div>
+                          </div>
+                          <HeydaysPracticePlayer 
+                            videoId={youtubeId} 
+                            title={newScoreTitle || '미리보기'}
+                            isSticky={false}
+                            hidePracticeControls={true}
+                            className="scale-90 origin-top"
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
 
                 <div>
@@ -752,7 +763,7 @@ export default function ScoreLibrary() {
                     
                     {/* Hidden Preview Player for Modal */}
                     <div className="hidden">
-                      <SmartYoutubePlayer 
+                      <HeydaysPracticePlayer 
                         videoId="" 
                         onReady={(player) => {
                           window.addEventListener('youtube-preview', (e: any) => {
@@ -879,22 +890,7 @@ function ScoreViewer({ score, isLiked, onToggleLike, onClose, onEdit, onDelete, 
               </div>
             </div>
 
-            {/* Smart Music Player Embedding */}
-            {score.musicVideoId && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-700 delay-200">
-                <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] border-l-4 border-red-500 pl-4 py-1 flex items-center gap-2">
-                  <Youtube size={16} className="text-red-500" />
-                  스마트 음악 연습 모드
-                </h3>
-                <SmartYoutubePlayer 
-                  videoId={score.musicVideoId} 
-                  title={score.musicTitle || score.title}
-                  isSticky={false}
-                  className="mb-8"
-                />
-              </div>
-            )}
-
+            {/* 상세 설명 Section */}
             {score.description && (
               <div className="space-y-6">
                 <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] border-l-4 border-indigo-600 pl-4 py-1">상세 설명 & 타임스탬프</h3>
@@ -986,7 +982,7 @@ function ScoreViewer({ score, isLiked, onToggleLike, onClose, onEdit, onDelete, 
 
         {/* Sticky Professional Player Bar (Bottom of Modal) */}
         {score.musicVideoId && (
-          <SmartYoutubePlayer 
+          <HeydaysPracticePlayer 
             videoId={score.musicVideoId} 
             title={score.musicTitle || score.title}
             isSticky={true} 

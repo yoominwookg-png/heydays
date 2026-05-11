@@ -26,13 +26,15 @@ export async function compressImage(file: File, customOptions?: CompressionOptio
   }
 
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (e) => {
-      const img = new Image();
-      img.src = e.target?.result as string;
-      img.onload = () => {
-        const startMaxWidthOrHeight = customOptions?.maxWidthOrHeight || 1200;
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.src = url;
+    
+    img.onload = () => {
+      // Clean up the URL object after image is loaded
+      URL.revokeObjectURL(url);
+      
+      const startMaxWidthOrHeight = customOptions?.maxWidthOrHeight || 1200;
         
         const performCompression = async (maxSize: number, q: number): Promise<File> => {
           let width = img.width;
@@ -87,8 +89,10 @@ export async function compressImage(file: File, customOptions?: CompressionOptio
             resolve(file); // Final fallback to original
           });
       };
-      img.onerror = () => resolve(file);
-    };
-    reader.onerror = () => resolve(file);
+      
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
   });
 }

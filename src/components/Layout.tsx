@@ -32,13 +32,14 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../services/auth';
 import { cn, formatDate } from '../lib/utils';
-import { UserRole, Notification as AppNotification, User } from '../types';
+import { UserRole, Notification as AppNotification, User, ChatRoom } from '../types';
 import { StorageService } from '../services/storage';
 import { AdminCrown } from './AdminCrown';
 import { UserAvatarDisplay } from './UserAvatarDisplay';
+import UserBioModal from './UserBioModal';
 import { ChatModal } from './ChatModal';
 import { ChatService } from '../services/chatService';
-import { collection, onSnapshot, query } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export default function Layout() {
@@ -60,7 +61,7 @@ export default function Layout() {
         }
       }
     }
-  }, [user]);
+  }, [user?.id, user?.deletedAt]);
 
   const handleCancelDeletion = async () => {
     if (user) {
@@ -77,32 +78,75 @@ export default function Layout() {
     setShowDeletionNotice(false);
   };
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  // Store the exact time this session started to filter out old notifications for the modal
+  const [sessionStartTime, setSessionStartTime] = useState(Date.now());
   const [activeMemberCount, setActiveMemberCount] = useState<number>(0);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
   const [isMembersListOpen, setIsMembersListOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [notifToDelete, setNotifToDelete] = useState<AppNotification | null>(null);
+  
+  // Update session start time when user actually logs in
+  useEffect(() => {
+    if (user?.id) {
+      setSessionStartTime(Date.now());
+    }
+  }, [user?.id]);
   
   // Chat state
   const [activeChatRoomId, setActiveChatRoomId] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [inviteTarget, setInviteTarget] = useState<User | null>(null);
+  const [incomingInvite, setIncomingInvite] = useState<AppNotification | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (user) {
-      const fetchNotifs = async () => {
-        const data = await StorageService.getNotifications(user.id);
-        setNotifications(data);
-      };
-      fetchNotifs();
+    if (user && notifications.length > 0) {
+      // Find the most recent unread chat invitation
+      // ONLY show as modal if it was created AFTER the user logged in/connected
+      // This ensures that "stale" invites from before the login are only shown in the notification list
+      const latestInvite = notifications.find(n => 
+        n.type === 'chat_invite' && 
+        !n.isRead && 
+        n.createdAt > sessionStartTime
+      );
+      
+      if (latestInvite && !incomingInvite) {
+        setIncomingInvite(latestInvite);
+      }
     }
-  }, [user]);
+  }, [notifications, user?.id, incomingInvite, sessionStartTime]);
+
+  useEffect(() => {
+    if (user) {
+      // Powerful real-time listener for notifications
+      const q = query(
+        collection(db, 'notifications'), 
+        where('userId', 'in', [user.id, 'all'])
+      );
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const notifs = snapshot.docs
+          .map(doc => doc.data() as AppNotification)
+          .sort((a, b) => b.createdAt - a.createdAt);
+        setNotifications(notifs);
+      }, (error) => {
+        console.error("Notification listener error details:", {
+          message: error.message,
+          code: error.code,
+          userId: user?.id,
+          query: "notifications where userId in [" + user?.id + ", 'all']"
+        });
+      });
+
+      return () => unsubscribe();
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     // Heartbeat logic
-    if (user) {
+    if (user?.id) {
       // Initial heartbeat
       StorageService.heartbeat(user.id);
       
@@ -113,9 +157,11 @@ export default function Layout() {
       
       return () => clearInterval(interval);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
+    if (!user) return;
+
     // Real-time active member count and list
     // We fetch all users but filter for "last seen" within 5 minutes
     const q = query(collection(db, 'users'));
@@ -143,7 +189,71 @@ export default function Layout() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user?.id]);
+
+  // Global offline cleanup logic
+  useEffect(() => {
+    if (!user?.id || activeUsers.length === 0) return;
+
+    // We only clean up rooms if the user is online
+    const onlineUserIds = activeUsers.map(u => u.id);
+
+    // Fetch rooms where user is a participant
+    const q = query(
+      collection(db, 'chatRooms'),
+      where('participants', 'array-contains', user.id)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docs.forEach(doc => {
+        const room = doc.data() as ChatRoom;
+        const participants = room.activeParticipants || [];
+        
+        // Find participants who are listed as active in the room but are NOT in the global activeUsers list
+        const offlineParticipants = participants.filter(pid => !onlineUserIds.includes(pid));
+        
+        if (offlineParticipants.length > 0) {
+          // The "lead" participant (alphabetically first active user) performs the cleanup
+          const sortedActives = participants.filter(pid => onlineUserIds.includes(pid)).sort();
+          const isLead = sortedActives[0] === user.id;
+          
+          if (isLead) {
+            offlineParticipants.forEach(offid => {
+              const offName = room.participantNames?.[room.participants.indexOf(offid)] || '회원';
+              ChatService.forceLeaveOfflineUser(room.id, offid, offName);
+            });
+          }
+        }
+      });
+    }, (error) => {
+      console.error("Room cleanup listener error:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user?.id, activeUsers]);
+
+  // Handle sudden unload/offline for current user
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const handleUnload = () => {
+      // Find rooms where user is active and try to leave them
+      // This is a "best effort" on tab close
+      const q = query(
+        collection(db, 'chatRooms'),
+        where('participants', 'array-contains', user.id)
+      );
+      
+      getDocs(q).then(snapshot => {
+        snapshot.docs.forEach(doc => {
+          ChatService.leaveRoom(doc.id, user.id, user.name);
+        });
+      });
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [user?.id, user?.name]);
 
   const handleLogout = () => {
     logout();
@@ -155,33 +265,138 @@ export default function Layout() {
   const markRead = async () => {
     if (user) {
       await StorageService.markNotificationsRead(user.id);
-      const data = await StorageService.getNotifications(user.id);
-      setNotifications(data);
     }
   };
 
-  const openChatWithMember = async (targetUserId: string) => {
+  const openChatWithMember = (targetUserId: string) => {
     if (!user) return;
     const targetUser = activeUsers.find(u => u.id === targetUserId);
     if (!targetUser) return;
+    if (targetUser.id === user.id) return;
+    
+    setInviteTarget(targetUser);
+    setIsMembersListOpen(false);
+  };
+
+  const handleSendInvite = async () => {
+    if (!user || !inviteTarget) return;
     
     try {
-      const roomId = await ChatService.getOrCreateDirectChat(user.id, user.name, targetUserId, targetUser.name);
+      const roomId = await ChatService.getOrCreateDirectChat(user.id, user.name, inviteTarget.id, inviteTarget.name);
+      const success = await ChatService.sendChatInvitation({ id: user.id, name: user.name }, inviteTarget.id, roomId, inviteTarget.name);
+      
+      if (!success) {
+        alert('이미 초대 알림이 전송된 회원입니다. 상대방이 확인하기 전까지 중복 발송되지 않습니다.');
+      }
+      
+      setInviteTarget(null);
+      
       setActiveChatRoomId(roomId);
       setIsChatOpen(true);
-      setIsMembersListOpen(false);
     } catch (error) {
-      console.error('Failed to open chat:', error);
+      console.error('Failed to send invite:', error);
     }
   };
 
-  const handleDeleteNotif = async () => {
-    if (notifToDelete) {
-      await StorageService.deleteNotification(notifToDelete.id);
-      setNotifToDelete(null);
-      if (user) {
-        const data = await StorageService.getNotifications(user.id);
-        setNotifications(data);
+  const handleAcceptInvite = async () => {
+    if (!user || !incomingInvite || !incomingInvite.meta?.roomId) return;
+    
+    try {
+      const roomId = incomingInvite.meta.roomId;
+      
+      // Update notification as read
+      await StorageService.deleteNotification(incomingInvite.id);
+      
+      // Join room with system message
+      await ChatService.joinRoomWithSystemMessage(roomId, user.id, user.name);
+      
+      setActiveChatRoomId(roomId);
+      setIsChatOpen(true);
+      setIncomingInvite(null);
+    } catch (error) {
+      console.error('Failed to accept invite:', error);
+    }
+  };
+
+  const handleDeclineInvite = async () => {
+    if (!user || !incomingInvite || !incomingInvite.meta?.roomId) return;
+    
+    const roomId = incomingInvite.meta.roomId;
+    const inviterName = incomingInvite.meta.inviterName;
+    
+    const rejectMessage = window.prompt(`${inviterName}님의 초대 거부 메시지를 작성할 수 있습니다.\n(빈칸으로 두면 기본 거절 메시지가 전송됩니다)`, '');
+    
+    // User clicked cancel
+    if (rejectMessage === null) return;
+
+    try {
+      await ChatService.rejectInvitation(roomId, user.id, user.name, rejectMessage || undefined);
+      await StorageService.deleteNotification(incomingInvite.id);
+      setIncomingInvite(null);
+    } catch (error) {
+      console.error('Failed to decline invite:', error);
+    }
+  };
+
+  const handleDeleteNotifId = async (id: string) => {
+    try {
+      await StorageService.deleteNotification(id);
+    } catch (error) {
+      console.error("Single deletion failed:", error);
+    }
+  };
+
+  const [isClearingAll, setIsClearingAll] = useState(false);
+  const [isProcessingClear, setIsProcessingClear] = useState(false);
+  const [isBioModalOpen, setIsBioModalOpen] = useState(false);
+  const [longPressedId, setLongPressedId] = useState<string | null>(null);
+  const [pressingId, setPressingId] = useState<string | null>(null);
+  const [pressTimer, setPressTimer] = useState<any>(null);
+  const [pressProgress, setPressProgress] = useState(0);
+
+  const startPress = (id: string) => {
+    if (pressTimer) clearInterval(pressTimer);
+    setPressingId(id);
+    setPressProgress(0);
+    
+    const startTime = Date.now();
+    const duration = 600;
+    
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min((elapsed / duration) * 100, 100);
+      setPressProgress(progress);
+      
+      if (progress >= 100) {
+        clearInterval(timer);
+        setLongPressedId(id);
+        setPressingId(null);
+        setPressTimer(null);
+      }
+    }, 20);
+    
+    setPressTimer(timer);
+  };
+
+  const cancelPress = () => {
+    if (pressTimer) {
+      clearInterval(pressTimer);
+      setPressTimer(null);
+    }
+    setPressingId(null);
+    setPressProgress(0);
+  };
+
+  const handleClearNotifications = async () => {
+    if (user) {
+      setIsProcessingClear(true);
+      try {
+        await StorageService.clearNotifications(user.id);
+      } catch (error) {
+        console.error("Clear failed:", error);
+      } finally {
+        setIsProcessingClear(false);
+        setIsClearingAll(false);
       }
     }
   };
@@ -356,39 +571,82 @@ export default function Layout() {
               className="fixed top-20 right-4 w-[calc(100vw-32px)] sm:w-96 bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl border border-slate-100 dark:border-slate-800 z-[70] overflow-hidden"
             >
               <div className="p-6 border-b border-slate-50 dark:border-slate-800 flex items-center justify-between">
-                <h3 className="font-black text-lg tracking-tight">알림</h3>
-                <span className="text-[10px] font-black bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                  총 {notifications.length}건
-                </span>
-                <button onClick={() => setIsNotifOpen(false)} className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors">
-                  <X size={18} />
-                </button>
+                <div className="flex flex-col">
+                  <h3 className="font-black text-lg tracking-tight">알림</h3>
+                  <p className="text-[10px] font-bold text-slate-400">총 {notifications.length}건의 소식</p>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setIsClearingAll(true)}
+                    disabled={notifications.length === 0}
+                    className="text-[10px] font-black text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 size={12} />
+                    전체 삭제
+                  </button>
+                  <button onClick={() => { setIsNotifOpen(false); setLongPressedId(null); }} className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors">
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
               <div className="max-h-[400px] overflow-y-auto p-4 space-y-3 custom-scrollbar">
                 {notifications.map(n => {
                   const isAdminNotif = n.type === 'admin';
+                  const isDeletable = true; // Powerful deletion: anything visible is deletable
+                  const isLongPressed = longPressedId === n.id;
+                  const isBeingPressed = pressingId === n.id;
+                  
                   return (
                     <div 
                       key={n.id} 
+                      onPointerDown={() => isDeletable && startPress(n.id)}
+                      onPointerUp={cancelPress}
+                      onPointerLeave={cancelPress}
+                      onContextMenu={(e) => {
+                        if (isDeletable) e.preventDefault();
+                      }}
                       className={cn(
-                        "p-4 rounded-2xl border transition-all relative group/notif",
+                        "p-4 rounded-2xl border transition-all relative group/notif cursor-default select-none overflow-hidden",
                         isAdminNotif 
                           ? "message-gold"
                           : n.isRead 
-                            ? "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 opacity-60" 
-                            : "bg-indigo-50/30 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-900 shadow-sm"
+                            ? "bg-white dark:bg-slate-900 border-slate-50 dark:border-slate-800 opacity-80" 
+                            : "bg-indigo-50/30 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-900 shadow-sm",
+                        isLongPressed && "ring-2 ring-red-500/20"
                       )}
                     >
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setNotifToDelete(n); }}
-                        className={cn(
-                          "absolute top-2 right-2 p-1.5 text-slate-300 hover:text-red-500 opacity-0 group-hover/notif:opacity-100 transition-all rounded-lg",
-                          isAdminNotif ? "bg-amber-100/50 dark:bg-amber-900/30" : ""
+                      {/* Press Progress Indicator */}
+                      {isBeingPressed && pressProgress > 0 && (
+                        <div 
+                          className="absolute bottom-0 left-0 h-1 bg-red-500/50 transition-all duration-75 z-10"
+                          style={{ width: `${pressProgress}%` }}
+                        />
+                      )}
+
+                      <AnimatePresence>
+                        {isDeletable && isLongPressed && (
+                          <motion.button 
+                            initial={{ scale: 0.5, opacity: 0, x: 10 }}
+                            animate={{ scale: 1, opacity: 1, x: 0 }}
+                            exit={{ scale: 0.5, opacity: 0, x: 10 }}
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              handleDeleteNotifId(n.id);
+                              setLongPressedId(null);
+                            }}
+                            className={cn(
+                              "absolute top-2 right-2 p-1.5 px-2.5 bg-red-500 text-white shadow-lg hover:bg-red-600 transition-all rounded-xl z-20 flex items-center gap-1.5 active:scale-95",
+                              isAdminNotif ? "bg-amber-600" : ""
+                            )}
+                          >
+                            <Trash2 size={10} />
+                            <span className="text-[10px] font-black uppercase tracking-tighter">삭제</span>
+                          </motion.button>
                         )}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                      <div className="flex items-center gap-2 mb-1">
+                      </AnimatePresence>
+
+                      <div className="flex items-center gap-2 mb-1 pr-6">
                         {n.type === 'notice' ? (
                           <Bell size={12} className="text-indigo-600" />
                         ) : isAdminNotif ? (
@@ -429,8 +687,92 @@ export default function Layout() {
         )}
       </AnimatePresence>
 
+      {/* Invite Confirmation Modal (Sender) */}
       <AnimatePresence>
-        {notifToDelete && (
+        {inviteTarget && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 text-center shadow-2xl"
+            >
+              <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <MessageSquare size={32} />
+              </div>
+              <h3 className="text-xl font-black mb-2 text-slate-900 dark:text-white">대화신청을 하시겠습니까?</h3>
+              <p className="text-slate-500 dark:text-slate-400 font-medium mb-8">
+                <span className="text-indigo-600 font-black">{inviteTarget.name}</span>님에게<br />
+                채팅 초대 알림을 보냅니다.
+              </p>
+              
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setInviteTarget(null)}
+                  className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black hover:bg-slate-200 dark:hover:bg-slate-700 transition-all font-black uppercase tracking-tighter"
+                >
+                  아니오
+                </button>
+                <button 
+                  onClick={handleSendInvite}
+                  className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-lg font-black uppercase tracking-tighter"
+                >
+                  예
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Incoming Invite Modal (Receiver) */}
+      <AnimatePresence>
+        {incomingInvite && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2.5rem] p-8 border border-slate-100 dark:border-slate-800 text-center shadow-2xl"
+            >
+              <div className="w-16 h-16 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <MessageSquare size={32} />
+              </div>
+              <h3 className="text-xl font-black mb-2 text-slate-900 dark:text-white">채팅에 합류 하시겠습니까?</h3>
+              <p className="text-slate-500 dark:text-slate-400 font-medium mb-8">
+                <span className="text-emerald-600 font-black">{incomingInvite.meta?.inviterName}</span>님이<br />
+                대화에 초대했습니다.
+              </p>
+              
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleDeclineInvite}
+                  className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black hover:bg-slate-200 dark:hover:bg-slate-700 transition-all font-black uppercase tracking-tighter"
+                >
+                  거절
+                </button>
+                <button 
+                  onClick={handleAcceptInvite}
+                  className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black hover:bg-emerald-700 transition-all shadow-lg font-black uppercase tracking-tighter"
+                >
+                  합류하기
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isClearingAll && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -445,21 +787,28 @@ export default function Layout() {
               <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Trash2 size={32} />
               </div>
-              <h3 className="text-xl font-black mb-2 text-slate-900 dark:text-white">알림을 삭제하시겠습니까?</h3>
-              <p className="text-slate-500 dark:text-slate-400 font-medium mb-8">기록에서 해당 알림이<br />영구적으로 삭제됩니다.</p>
+              <h3 className="text-xl font-black mb-2 text-slate-900 dark:text-white">모든 알림을 삭제할까요?</h3>
+              <p className="text-slate-500 dark:text-slate-400 font-medium mb-8">나에게 도착한 모든 알림이<br />영구적으로 삭제됩니다.</p>
               
               <div className="flex gap-3">
                 <button 
-                  onClick={() => setNotifToDelete(null)}
-                  className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                  onClick={() => setIsClearingAll(false)}
+                  disabled={isProcessingClear}
+                  className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
                 >
                   아니요
                 </button>
                 <button 
-                  onClick={handleDeleteNotif}
-                  className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black hover:bg-red-600 transition-all"
+                  onClick={handleClearNotifications}
+                  disabled={isProcessingClear}
+                  className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black hover:bg-red-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  예
+                  {isProcessingClear ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      삭제 중...
+                    </>
+                  ) : '예, 모두 삭제'}
                 </button>
               </div>
             </motion.div>
@@ -520,22 +869,33 @@ export default function Layout() {
           {/* User Profile - Compact horizontal layout */}
           <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
             <div className="bg-slate-50 dark:bg-slate-800 rounded-[2rem] p-2 flex items-center gap-3 border border-slate-100 dark:border-slate-800">
-              <UserAvatarDisplay 
-                userId={user?.id || ''} 
-                name={user?.name || ''} 
-                className="w-10 h-10 border-2 border-white dark:border-slate-700 shadow-sm"
-                size={20}
-              />
+              <button 
+                onClick={() => { navigate('/settings'); setIsSidebarOpen(false); }}
+                className="relative group/avatar"
+              >
+                <UserAvatarDisplay 
+                  userId={user?.id || ''} 
+                  name={user?.name || ''} 
+                  className="w-10 h-10 border-2 border-white dark:border-slate-700 shadow-sm transition-transform hover:scale-105 active:scale-95"
+                  size={20}
+                />
+                <div className="absolute inset-0 bg-black/10 rounded-2xl opacity-0 group-hover/avatar:opacity-100 transition-opacity flex items-center justify-center">
+                  <SettingsIcon size={12} className="text-white" />
+                </div>
+              </button>
               
-              <div className="flex-1 min-w-0">
+              <button 
+                onClick={() => setIsBioModalOpen(true)}
+                className="flex-1 min-w-0 text-left hover:bg-slate-100 dark:hover:bg-slate-700/50 p-1.5 rounded-xl transition-colors"
+              >
                 <div className="font-bold text-sm truncate dark:text-white flex items-center gap-1">
                   {user?.name}
                   {user?.role === UserRole.ADMIN && <AdminCrown size={12} />}
                 </div>
-                <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
                   HEYDAYS MEMBERS
                 </p>
-              </div>
+              </button>
 
               <button 
                 onClick={handleLogout}
@@ -620,6 +980,15 @@ export default function Layout() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isBioModalOpen && user && (
+          <UserBioModal 
+            user={user} 
+            onClose={() => setIsBioModalOpen(false)} 
+          />
         )}
       </AnimatePresence>
 

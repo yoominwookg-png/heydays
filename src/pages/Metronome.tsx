@@ -446,9 +446,9 @@ export default function Metronome() {
                 
                 <div className="absolute bottom-[15%] left-1/2 -translate-x-1/2 flex items-center gap-2">
                   {isPlaying ? (
-                    <Square size={16} md:size={20} className="fill-red-500 text-red-500" />
+                    <Square size={20} className="fill-red-500 text-red-500" />
                   ) : (
-                    <Play size={20} md:size={24} className="fill-white text-white ml-1" />
+                    <Play size={24} className="fill-white text-white ml-1" />
                   )}
                 </div>
               </motion.div>
@@ -464,7 +464,7 @@ export default function Metronome() {
                 }}
                 className="w-10 h-10 md:w-16 md:h-16 bg-slate-900 rounded-2xl hover:bg-slate-800 active:scale-90 transition-all flex items-center justify-center text-slate-400 border border-white/5 shadow-lg group"
               >
-                <Minus size={18} md:size={24} strokeWidth={3} className="group-hover:text-white transition-colors" />
+                <Minus size={24} strokeWidth={3} className="group-hover:text-white transition-colors" />
               </button>
 
               <div className="flex gap-3 md:gap-8">
@@ -488,7 +488,7 @@ export default function Metronome() {
                 }}
                 className="w-10 h-10 md:w-16 md:h-16 bg-slate-900 rounded-2xl hover:bg-slate-800 active:scale-90 transition-all flex items-center justify-center text-slate-400 border border-white/5 shadow-lg group"
               >
-                <Plus size={18} md:size={24} strokeWidth={3} className="group-hover:text-white transition-colors" />
+                <Plus size={24} strokeWidth={3} className="group-hover:text-white transition-colors" />
               </button>
             </div>
             

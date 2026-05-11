@@ -256,15 +256,26 @@ service cloud.firestore {
 
     // 8. Notifications
     match /notifications/{notificationId} {
-      allow read: if isSignedIn() && isValidId(notificationId) && (existing().userId == request.auth.uid || existing().userId == 'all');
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.userId == 'all');
-      allow update: if isVerified() && isValidId(notificationId) && (isOwner(existing().userId) || existing().userId == 'all' || isAdmin()) && 
-                      incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
-      allow create: if isVerified() && isValidId(notificationId) && (
-                      (incoming().userId == 'all' && isAdmin()) ||
-                      (incoming().userId != 'all' && incoming().userId is string)
+      allow get: if isSignedIn() && (
+                    isValidId(notificationId) && (
+                      resource == null || 
+                      isOwner(existing().userId) ||
+                      (existing().type == 'chat_invite' && existing().meta.inviterId == request.auth.uid) ||
+                      existing().userId == 'all'
+                    )
+                  );
+      allow list: if isSignedIn() && resource.data.userId in [request.auth.uid, 'all'];
+      allow update: if isSignedIn() && isValidId(notificationId) && (
+                      (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['isRead'])) ||
+                      (existing().type == 'chat_invite' && (existing().meta.inviterId == request.auth.uid || existing().userId == request.auth.uid)) ||
+                      isAdmin()
                     );
-      allow delete: if isVerified() && (isAdmin() || isOwner(existing().userId)) && isValidId(notificationId);
+      allow create: if isSignedIn() && isValidId(notificationId) && (
+                      (incoming().userId == 'all' && isAdmin()) ||
+                      (incoming().type == 'chat_invite' && (incoming().meta.inviterId == request.auth.uid || incoming().userId == request.auth.uid)) ||
+                      (incoming().userId == request.auth.uid) // Self-notification
+                    );
+      allow delete: if isSignedIn() && (isAdmin() || isOwner(existing().userId)) && isValidId(notificationId);
     }
 
     // 9. Attachments (Direct Firestore Storage)
@@ -306,25 +317,30 @@ service cloud.firestore {
         return isSignedIn() && request.auth.uid in data.participants;
       }
       
-      allow read, get: if isParticipant(resource.data) || isAdmin();
+      allow get: if isSignedIn() && (
+                    (roomId.matches('^direct_.*' + request.auth.uid + '.*$')) ||
+                    (resource != null && isParticipant(resource.data)) ||
+                    (resource != null && resource.data.get('status', 'active') == 'ended') ||
+                    isAdmin()
+                  );
       allow list: if (isSignedIn() && request.auth.uid in resource.data.participants) || isAdmin();
-      allow create: if isVerified() && 
+      allow create: if isSignedIn() && 
                       request.auth.uid in incoming().participants && 
                       isValidChatRoom(incoming()) &&
                       isValidId(roomId);
-      allow update: if isVerified() && (isParticipant(existing()) || isAdmin()) && (
+      allow update: if isSignedIn() && (isParticipant(existing()) || isAdmin()) && (
                       // Add new participant or update active list
                       (incoming().diff(existing()).affectedKeys().hasOnly(['participants', 'participantNames', 'activeParticipants', 'status', 'endedAt', 'updatedAt', 'lastMessage']) && 
-                       isValidChatRoom(incoming())) ||
+                      isValidChatRoom(incoming())) ||
                       isAdmin()
                     );
-      allow delete: if isAdmin();
+      allow delete: if isParticipant(existing()) || isAdmin();
 
       match /messages/{messageId} {
         function isValidChatMessage(data) {
           return data.id is string &&
                  data.roomId == roomId &&
-                 data.senderId == request.auth.uid &&
+                 (data.senderId == request.auth.uid || data.senderId == 'system') &&
                  data.senderName is string &&
                  data.content is string && data.content.size() <= 5000 &&
                  data.createdAt is number &&
@@ -334,11 +350,13 @@ service cloud.firestore {
                  (!('previewUrl' in data) || data.previewUrl is string);
         }
 
-        allow read, list: if isParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data) || isAdmin();
-        allow create: if isVerified() && 
+        allow read, list: if isParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data) || 
+                          get(/databases/$(database)/documents/chatRooms/$(roomId)).data.get('status', 'active') == 'ended' ||
+                          isAdmin();
+        allow create: if isSignedIn() && 
                         isParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data) &&
                         isValidChatMessage(incoming());
-        allow delete: if isAdmin();
+        allow delete: if isParticipant(get(/databases/$(database)/documents/chatRooms/$(roomId)).data) || isAdmin();
       }
     }
   }

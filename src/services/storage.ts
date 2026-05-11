@@ -8,6 +8,7 @@ import {
   doc, 
   getDoc, 
   getDocs, 
+  getDocsFromServer,
   setDoc, 
   updateDoc, 
   deleteDoc, 
@@ -16,7 +17,8 @@ import {
   orderBy, 
   addDoc,
   increment,
-  onSnapshot
+  onSnapshot,
+  writeBatch
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { STORAGE_KEYS, APP_VERSION } from '../constants';
@@ -310,6 +312,27 @@ export const StorageService = {
     }
   },
 
+  async clearMessages(userId: string) {
+    try {
+      const q = query(collection(db, 'messages'), where('receiverId', '==', userId));
+      const snapshot = await getDocsFromServer(q);
+      
+      if (snapshot.empty) return;
+
+      const docs = snapshot.docs;
+      for (let i = 0; i < docs.length; i += 500) {
+        const batch = writeBatch(db);
+        const chunk = docs.slice(i, i + 500);
+        chunk.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'messages');
+    }
+  },
+
   // Notifications
   async getNotifications(userId: string): Promise<Notification[]> {
     try {
@@ -338,10 +361,35 @@ export const StorageService = {
     }
   },
 
-  async markNotificationsRead(userId: string) {
-    // This is batch-like in localStorage, here we need to update each
+  async clearNotifications(userId: string) {
     try {
-      const q = query(collection(db, 'notifications'), where('userId', 'in', [userId, 'all']), where('isRead', '==', false));
+      // Only clear private notifications to avoid deleting global announcements for others
+      const q = query(collection(db, 'notifications'), where('userId', '==', userId));
+      
+      const snapshot = await getDocsFromServer(q);
+      
+      if (snapshot.empty) return;
+
+      // Batch delete up to 500 docs at a time (Firestore limit)
+      const docs = snapshot.docs;
+      for (let i = 0; i < docs.length; i += 500) {
+        const batch = writeBatch(db);
+        const chunk = docs.slice(i, i + 500);
+        chunk.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'notifications');
+    }
+  },
+
+  async markNotificationsRead(userId: string) {
+    try {
+      // Only mark private notifications as read. Global notifications (status 'all') 
+      // should probably not be marked for everyone by one user.
+      const q = query(collection(db, 'notifications'), where('userId', '==', userId), where('isRead', '==', false));
       const snapshot = await getDocs(q);
       const updates = snapshot.docs.map(d => updateDoc(d.ref, { isRead: true }));
       await Promise.all(updates);
@@ -504,10 +552,11 @@ export const StorageService = {
   async uploadFile(path: string, file: File | Blob, compressionOptions?: { maxWidthOrHeight?: number; maxSizeMB?: number; quality?: number }): Promise<string> {
     const { compressImage } = await import('../lib/imageCompression');
     
-    // Hard limit for any file before processing to prevent browser crashes (e.g., 20MB)
-    const ABSOLUTE_MAX_BEFORE_PROCESSING = 20 * 1024 * 1024;
+    // Hard limit for any file before processing to prevent browser crashes (e.g., 50MB)
+    const ABSOLUTE_MAX_BEFORE_PROCESSING = 50 * 1024 * 1024;
     if (file.size > ABSOLUTE_MAX_BEFORE_PROCESSING) {
-      throw new Error(`파일 용량이 너무 큽니다 (${(file.size / (1024 * 1024)).toFixed(1)}MB). 전체 용량을 1MB 이하로 압축하여 올려주세요.`);
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      throw new Error(`파일 용량이 너무 큽니다 (${sizeMB}MB). 이 시스템은 한 파일당 최대 1MB까지만 저장 가능합니다. 50MB 이상의 파일은 브라우저 성능을 위해 업로드 전 직접 압축해주셔야 합니다.`);
     }
 
     // Create a timeout promise

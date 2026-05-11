@@ -6,14 +6,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Bell, 
-  Users, 
   Database, 
   Shield, 
   ChevronRight,
   Send,
   AlertTriangle,
   Settings as SettingsIcon,
-  UserCheck
+  Calendar
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import { useAuth } from '../services/auth';
@@ -24,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ChatStorageModal } from '../components/ChatStorageModal';
+import { UserAccessStatusModal } from '../components/UserAccessStatusModal';
 import { FolderClock } from 'lucide-react';
 
 export default function AdminCenter() {
@@ -34,12 +34,14 @@ export default function AdminCenter() {
   const [pushContent, setPushContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isChatStorageOpen, setIsChatStorageOpen] = useState(false);
+  const [isAccessStatusOpen, setIsAccessStatusOpen] = useState(false);
 
   useEffect(() => {
-    if (user?.role !== UserRole.ADMIN) {
-      if (user) navigate('/');
+    if (!user) return;
+    
+    if (user.role !== UserRole.ADMIN) {
+      navigate('/');
       return;
     }
     
@@ -56,36 +58,13 @@ export default function AdminCenter() {
   }, [user, navigate]);
 
   const allActiveUsers = users.filter(u => !u.deletedAt);
-  const onlineCount = allActiveUsers.filter(u => {
-    if (!u.lastActiveAt) return false;
-    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-    return u.lastActiveAt > fiveMinutesAgo;
-  }).length;
+  
+  const now = Date.now();
+  const weekStart = now - 7 * 24 * 60 * 60 * 1000;
+  const inactiveCutoff = now - 30 * 24 * 60 * 60 * 1000;
 
-  const handleSyncCommentCounts = async () => {
-    if (confirm('모든 게시글의 댓글 수를 실제 데이터와 대조하여 동기화하시겠습니까? 데이터가 많을 경우 시간이 걸릴 수 있습니다.')) {
-      setIsSyncing(true);
-      try {
-        const allPosts = await StorageService.getPosts();
-        let updatedCount = 0;
-        
-        for (const post of allPosts) {
-          const comments = await StorageService.getComments(post.id);
-          if (post.commentCount !== comments.length) {
-            await StorageService.syncCommentCount(post.id, comments.length);
-            updatedCount++;
-          }
-        }
-        
-        alert(`동기화 완료! 총 ${allPosts.length}개의 글 중 ${updatedCount}개의 댓글 수가 수정되었습니다.`);
-      } catch (error) {
-        console.error('Sync failed:', error);
-        alert('동기화 중 오류가 발생했습니다.');
-      } finally {
-        setIsSyncing(false);
-      }
-    }
-  };
+  const weeklyCount = allActiveUsers.filter(u => u.lastActiveAt && u.lastActiveAt >= weekStart).length;
+  const inactiveCount = allActiveUsers.filter(u => !u.lastActiveAt || u.lastActiveAt < inactiveCutoff).length;
 
   const handleSendPush = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,16 +106,37 @@ export default function AdminCenter() {
             </h3>
             
             <div className="space-y-4">
-              <div className="p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-3xl">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-black text-emerald-600 uppercase tracking-widest">접속 중인 회원</p>
-                  <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <button 
+                onClick={() => setIsAccessStatusOpen(true)}
+                className="w-full text-left p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-3xl hover:bg-indigo-500/15 transition-all group"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs font-black text-indigo-600 uppercase tracking-widest px-1">회원 접속 현황</p>
+                  <Calendar className="text-indigo-600" size={16} />
                 </div>
-                <div className="flex items-end gap-2">
-                  <p className="text-3xl font-black text-emerald-700 dark:text-emerald-400">{onlineCount}</p>
-                  <p className="text-sm font-bold text-emerald-600/60 mb-1">명 (실시간 접속)</p>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">주간 접속</p>
+                    <div className="flex items-end gap-1">
+                      <p className="text-2xl font-black text-indigo-700 dark:text-indigo-400">{weeklyCount}</p>
+                      <p className="text-[10px] font-bold text-indigo-600/60 mb-1">명</p>
+                    </div>
+                  </div>
+                  <div className="border-l border-indigo-500/20 pl-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">장기 미접속</p>
+                    <div className="flex items-end gap-1">
+                      <p className="text-2xl font-black text-rose-600 dark:text-rose-400">{inactiveCount}</p>
+                      <p className="text-[10px] font-bold text-rose-600/60 mb-1">명</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
+
+                <div className="mt-4 flex items-center justify-between text-[10px] font-black text-indigo-600/40 uppercase tracking-wider">
+                  <span>상세 로그 분석</span>
+                  <ChevronRight size={12} className="group-hover:translate-x-1 transition-transform" />
+                </div>
+              </button>
 
               <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl">
                 <div className="flex items-center justify-between mb-2">
@@ -149,23 +149,6 @@ export default function AdminCenter() {
               </div>
               
               <div className="grid grid-cols-2 gap-4">
-                <button 
-                  onClick={handleSyncCommentCounts}
-                  disabled={isSyncing}
-                  className={cn(
-                    "p-6 rounded-3xl group transition-all text-left flex flex-col",
-                    isSyncing ? "bg-slate-100 opacity-50" : "bg-teal-50 dark:bg-teal-900/30 hover:bg-teal-100"
-                  )}
-                >
-                  <motion.div
-                    animate={isSyncing ? { rotate: 360 } : {}}
-                    transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                  >
-                    <Database className="text-teal-600 dark:text-teal-400 mb-3" size={20} />
-                  </motion.div>
-                  <p className="font-black text-teal-950 dark:text-white text-sm">댓글 수 동기화</p>
-                  <p className="text-[10px] font-bold text-teal-600/60 mt-1 uppercase tracking-tight">Data Sync</p>
-                </button>
                 <button 
                   onClick={() => navigate('/admin/data')}
                   className="p-6 bg-indigo-50 dark:bg-indigo-900/30 rounded-3xl group hover:bg-indigo-100 transition-colors text-left"
@@ -180,13 +163,6 @@ export default function AdminCenter() {
                   <FolderClock className="text-indigo-600 dark:text-indigo-400 mb-3" size={20} />
                   <p className="font-black text-slate-800 dark:text-white text-sm">대화창 저장</p>
                 </button>
-                <button 
-                  onClick={() => navigate('/settings')}
-                  className="p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl group hover:bg-slate-100 transition-colors text-left"
-                >
-                  <Users className="text-slate-400 mb-3" size={20} />
-                  <p className="font-black text-slate-800 dark:text-white text-sm">회원 리스트</p>
-                </button>
               </div>
             </div>
           </div>
@@ -194,6 +170,12 @@ export default function AdminCenter() {
           <ChatStorageModal 
             isOpen={isChatStorageOpen} 
             onClose={() => setIsChatStorageOpen(false)} 
+          />
+
+          <UserAccessStatusModal
+            isOpen={isAccessStatusOpen}
+            onClose={() => setIsAccessStatusOpen(false)}
+            users={allActiveUsers}
           />
 
           <div className="p-8 bg-red-50 dark:bg-red-900/10 rounded-[2.5rem] border border-red-100 dark:border-red-900/20">

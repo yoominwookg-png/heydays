@@ -27,6 +27,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ roomId, isOpen, onClose, a
   const [newMessage, setNewMessage] = useState('');
   const [showInviteList, setShowInviteList] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [invitingUser, setInvitingUser] = useState<{ id: string; name: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,10 +37,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ roomId, isOpen, onClose, a
     // Track joining
     ChatService.enterRoom(roomId, user.id);
     
-    // Cleanup on unmount/close
-    return () => {
-      ChatService.leaveRoom(roomId, user.id);
-    };
+    // We don't leave on unmount anymore, only on offline logic
   }, [isOpen, roomId, user?.id, readOnly]);
 
   useEffect(() => {
@@ -178,13 +176,26 @@ export const ChatModal: React.FC<ChatModalProps> = ({ roomId, isOpen, onClose, a
     }
   };
 
-  const inviteMember = async (targetUserId: string) => {
-    if (!roomId) return;
+  const inviteMember = (targetUser: { id: string, name: string }) => {
+    if (!roomId || !user) return;
+    setInvitingUser(targetUser);
+  };
+
+  const handleConfirmInvite = async () => {
+    if (!invitingUser || !roomId || !user) return;
+
     try {
-      await ChatService.inviteToChat(roomId, targetUserId);
+      const success = await ChatService.sendChatInvitation({ id: user.id, name: user.name }, invitingUser.id, roomId, invitingUser.name);
+      if (success) {
+        alert('초대 알림을 보냈습니다.');
+      } else {
+        alert('이미 초대 알림이 전송된 회원입니다. 상대방이 확인하기 전까지 중복 발송되지 않습니다.');
+      }
+      setInvitingUser(null);
       setShowInviteList(false);
     } catch (error) {
       console.error('Failed to invite member:', error);
+      setInvitingUser(null);
     }
   };
 
@@ -262,6 +273,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({ roomId, isOpen, onClose, a
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
               {messages.map((msg, idx) => {
+                if (msg.type === 'system') {
+                  return (
+                    <div key={msg.id} className="flex justify-center my-4">
+                      <div className="px-4 py-1.5 bg-slate-100/50 dark:bg-slate-800/50 rounded-full border border-slate-100 dark:border-slate-800 shadow-sm">
+                        <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-tight">
+                          {msg.content}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const isMine = msg.senderId === user?.id;
                 const prevMsg = messages[idx - 1];
                 const showHeader = !prevMsg || prevMsg.senderId !== msg.senderId;
@@ -398,7 +421,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ roomId, isOpen, onClose, a
                       inviteableUsers.map(u => (
                         <button 
                           key={u.id}
-                          onClick={() => inviteMember(u.id)}
+                          onClick={() => inviteMember({ id: u.id, name: u.name })}
                           className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-left group"
                         >
                           <UserAvatarDisplay userId={u.id} name={u.name} className="w-10 h-10" size={20} />
@@ -416,6 +439,48 @@ export const ChatModal: React.FC<ChatModalProps> = ({ roomId, isOpen, onClose, a
                       </div>
                     )}
                   </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Invitation Request Modal (초대 신청 모달) */}
+            <AnimatePresence>
+              {invitingUser && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-30 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-[2px]"
+                >
+                  <motion.div 
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    className="bg-white dark:bg-slate-800 rounded-[2rem] p-6 w-full max-w-xs shadow-2xl border border-slate-100 dark:border-slate-700 text-center"
+                  >
+                    <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mx-auto mb-4">
+                      <UserPlus size={32} />
+                    </div>
+                    <h5 className="font-black text-lg mb-2">초대 신청</h5>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-6">
+                      <span className="text-indigo-600 dark:text-indigo-400 font-bold">{invitingUser.name}</span>님을<br />
+                      채팅에 초대하시겠습니까?
+                    </p>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setInvitingUser(null)}
+                        className="flex-1 py-3 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-600 transition-all"
+                      >
+                        아니오
+                      </button>
+                      <button 
+                        onClick={handleConfirmInvite}
+                        className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all"
+                      >
+                        예
+                      </button>
+                    </div>
+                  </motion.div>
                 </motion.div>
               )}
             </AnimatePresence>
